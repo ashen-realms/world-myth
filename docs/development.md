@@ -102,3 +102,20 @@ deprecated; the application uses FileDialog. The application also runs directly
 on Wayland. XTest is a test-only
 dependency and is never linked into the GUI or CLI executables. GUI test scripts
 use temporary configuration as well as temporary world files.
+
+## Terminal Preview
+
+The Preview button/F7 needs Kitty (`sudo dnf install kitty`) and the compiled
+`world-myth` CLI beside the GUI binary or on PATH. The launcher currently supports
+Kitty only; `world-myth preview PATH --map REGION/MAP` can be used directly in
+another ANSI/truecolor Linux terminal. CLI preview uses Linux `TIOCGWINSZ` and
+Crystal raw console mode, restores the terminal on normal exit/errors, and handles
+resizes, arrow/WASD panning, Q/Esc/Ctrl+C exit. It requires an interactive TTY.
+All preview sources must validate. Glyph appearance and unusual multi-codepoint
+cluster widths depend on the terminal/font; cells reserve two terminal columns.
+
+`make preview-check` launches real GTK and Kitty windows with a disposable project
+and isolated Kitty configuration. The test enables a private Unix control socket
+for that Kitty instance only, inspects its rendered text, sends input, and checks
+unsaved source preview and snapshot cleanup. It requires a graphical display and
+Kitty. Production Preview does not enable remote control or any network service.

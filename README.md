@@ -33,6 +33,7 @@ shards build world-myth
 bin/world-myth new my-world
 bin/world-myth validate examples/example-world
 bin/world-myth build examples/example-world
+bin/world-myth preview examples/example-world --map heartlands/village
 bin/world-myth fmt my-world --check
 bin/world-myth --help
 ```
@@ -50,6 +51,19 @@ Ctrl-scroll or the +/− buttons zooms. Visibility toggles independently show te
 objects, collision overrides and grid lines. Red collision overlays block movement;
 green overlays explicitly allow it.
 
+Click **Preview** beside Map/Source (or press F7) to open the selected map in a
+separate Kitty terminal. The preview includes unsaved terrain, object and entity
+edits through a temporary snapshot; it does not save or change the world. The world
+must validate first. Arrows or WASD pan, Q/Esc closes. The terminal resizes live and
+uses truecolor with two terminal columns per logical tile for Unicode alignment.
+This is a read-only map viewer, without gameplay or collision overlays.
+
+The desktop launcher currently requires `kitty` (`sudo dnf install kitty`) and
+the `world-myth` CLI beside the GUI binary or on PATH. The CLI command above runs
+directly in any interactive ANSI/truecolor Linux terminal. Actual glyph appearance
+depends on the terminal font and its Unicode support. Reopen Preview to see later
+edits; the snapshot is removed when the terminal or editor exits normally.
+
 Select entities to edit name, tags, position and scalar properties in the inspector.
 Use Source for raw YAML or Markdown. Invalid files remain editable, and validation
 errors navigate to source locations. Visual editing of commented YAML requires an
@@ -57,7 +71,7 @@ explicit, undoable normalization preview. Saving detects external file changes a
 provides reload/save-copy recovery instead of silently overwriting another editor.
 
 Shortcuts: Ctrl+N new, Ctrl+O open, Ctrl+S save all, Ctrl+Z undo,
-Ctrl+Shift+Z redo, F5 validate, F6 build. Window/layout/rendering preferences and
+Ctrl+Shift+Z redo, F5 validate, F6 build, F7 terminal preview. Window/layout/rendering preferences and
 recent projects are local to your XDG configuration directory. Git status is
 read-only; Git itself is optional.
 

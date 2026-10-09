@@ -1,4 +1,4 @@
-.PHONY: setup build test check run cli gui-check input-check
+.PHONY: setup build test check run cli gui-check input-check preview-check
 
 setup:
 	shards install --frozen
@@ -31,3 +31,7 @@ gui-check:
 input-check:
 	crystal build scripts/input_check.cr -o bin/input-check
 	GDK_BACKEND=x11 GDK_DEBUG=no-portals bin/input-check
+
+preview-check: build
+	crystal build scripts/preview_check.cr -o bin/preview-check
+	bin/preview-check

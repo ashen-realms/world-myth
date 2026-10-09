@@ -1,4 +1,5 @@
 require "option_parser"
+require "./preview"
 
 module WorldMyth::CLI
   HELP = <<-TEXT
@@ -8,6 +9,7 @@ module WorldMyth::CLI
     world-myth new <name-or-directory>
     world-myth validate [path]
     world-myth build [path]
+    world-myth preview [path] --map <region/map>
     world-myth fmt [path] [--check] [--allow-comment-loss]
     world-myth --help | --version
 
@@ -26,7 +28,7 @@ module WorldMyth::CLI
       output.puts WorldMyth::VERSION
       return 0
     end
-    unless {"new", "validate", "build", "fmt"}.includes?(command)
+    unless {"new", "validate", "build", "fmt", "preview"}.includes?(command)
       err.puts "Unknown command: #{command}\n#{HELP}"
       return 2
     end
@@ -34,21 +36,33 @@ module WorldMyth::CLI
     check = false
     allow = false
     help = false
+    map_reference : String? = nil
+    snapshot : String? = nil
     OptionParser.parse(rest) do |parser|
       parser.on("--check", "Check formatting without writing") { check = true }
       parser.on("--allow-comment-loss", "Explicitly allow YAML normalization") { allow = true }
       parser.on("--help", "Show help") { help = true }
+      parser.on("--map MAP", "Map reference for terminal preview") { |value| map_reference = value }
+      parser.on("--snapshot FILE", "Preview a desktop source snapshot (internal)") { |value| snapshot = value }
     end
     if help
       output.puts HELP
       return 0
     end
-    if rest.size > 1 || (command == "new" && rest.empty?) || (command != "fmt" && (check || allow))
+    if rest.size > 1 || (command == "new" && rest.empty?) || (command != "fmt" && (check || allow)) || (command != "preview" && (map_reference || snapshot)) || (command == "preview" && (!map_reference || (snapshot && !rest.empty?)))
       err.puts HELP
       return 2
     end
     path = File.expand_path(rest.first? || ".")
     case command
+    when "preview"
+      analysis = if snapshot_file = snapshot
+                   Core::Analysis.new(Hash(String, String).from_json(File.read(snapshot_file)))
+                 else
+                   Core::Project.new(path).analyze
+                 end
+      preview = Core::Preview.new(analysis, map_reference.not_nil!)
+      TerminalPreview.new(preview).run
     when "new"
       Core::Project.create(path, File.basename(path))
       output.puts "Created #{path}"

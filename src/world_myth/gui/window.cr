@@ -1,5 +1,6 @@
 require "./canvas"
 require "./preferences"
+require "./preview_launcher"
 
 module WorldMyth::GUI
   class Window
@@ -185,6 +186,10 @@ module WorldMyth::GUI
       modebar.append(@document_title)
       modebar.append(button("Map") { show_map })
       modebar.append(button("Source") { show_source })
+      preview_button = button("Preview") { preview_world }
+      preview_button.tooltip_text = "Open this map in a terminal, including unsaved edits (F7)"
+      @buttons["Preview"] = preview_button
+      modebar.append(preview_button)
       modebar.append(button("Normalize YAML…") { normalize_current })
       editor.append(modebar)
       @editor_stack.vexpand = true
@@ -286,7 +291,7 @@ module WorldMyth::GUI
     end
 
     private def install_actions
-      {"save" => {"Save", "<Control>s"}, "undo" => {"Undo", "<Control>z"}, "redo" => {"Redo", "<Control><Shift>z"}, "open" => {"Open", "<Control>o"}, "new" => {"New", "<Control>n"}, "validate" => {"Validate", "F5"}, "build" => {"Build", "F6"}}.each do |name, config|
+      {"save" => {"Save", "<Control>s"}, "undo" => {"Undo", "<Control>z"}, "redo" => {"Redo", "<Control><Shift>z"}, "open" => {"Open", "<Control>o"}, "new" => {"New", "<Control>n"}, "validate" => {"Validate", "F5"}, "build" => {"Build", "F6"}, "preview" => {"Preview", "F7"}}.each do |name, config|
         action = Gio::SimpleAction.new(name, nil)
         action.activate_signal.connect { |_| safely { dispatch(config[0]) } }
         window.add_action(action)
@@ -303,6 +308,7 @@ module WorldMyth::GUI
       when "Redo"        then redo
       when "Validate"    then validate_world
       when "Build"       then build_world
+      when "Preview"     then preview_world
       when "Preferences" then preferences_dialog
       end
     end
@@ -644,8 +650,27 @@ module WorldMyth::GUI
                             when "Undo"                       then !!current.try { |d| !d.history.empty? }
                             when "Redo"                       then !!current.try { |d| !d.future.empty? }
                             when "Validate", "Build"          then !!project && !busy
+                            when "Preview"                    then !!current.try(&.model.is_a?(Core::Map)) && !busy
                             else                                   !!project
                             end
+      end
+    end
+
+    def preview_world
+      flush_source
+      p = project || return
+      doc = current || return
+      sources = p.snapshot
+      candidate = Core::Analysis.new(sources)
+      display_diagnostics(candidate.diagnostics)
+      reference = candidate.paths.find { |key, path| key.starts_with?("map:") && path == doc.path }.try(&.[0].lchop("map:"))
+      raise Core::DocumentError.new("Select a valid map to preview.") unless reference
+      Core::Preview.new(candidate, reference)
+      PreviewLauncher.launch(sources, reference) do |message|
+        GLib.idle_add do
+          error_dialog(message) unless @closing
+          false
+        end
       end
     end
 

@@ -5,7 +5,7 @@ versions in development.md. These checks were run, not inferred from compilation
 
 | Check | Result |
 |---|---|
-| `crystal spec` | 30 examples, zero failures/errors |
+| `crystal spec` | 34 examples, zero failures/errors |
 | Specs with DISPLAY and WAYLAND_DISPLAY unset | Pass |
 | `crystal tool format --check` | Pass |
 | `shards build` | CLI and GTK executables built |
@@ -16,6 +16,7 @@ versions in development.md. These checks were run, not inferred from compilation
 | Minimal native window | Launched; Cairo/Pango glyphs and GtkSource highlighting visually inspected |
 | Native GUI integration scenario | Launched on GNOME/Wayland; passed |
 | Real mouse/keyboard scenario | Launched on isolated X11/Xvfb display; passed |
+| Terminal Preview integration | GTK Preview button launched Kitty on GNOME/Wayland; unsaved edits, pan, Q and snapshot cleanup passed |
 
 ## Core coverage
 
@@ -28,7 +29,9 @@ qualified reference ambiguity; UTF-8 glyph separation; viewport zoom coordinates
 CLI help/errors/format behavior; read-only SQLite content and integrity;
 repeatable builds; publication rollback and interrupted-build recovery;
 concurrent compiler exclusion; pre-replacement save failure; Markdown preservation;
-Git-optional behavior; and all entity/layer content in the example.
+Git-optional behavior; all entity/layer content in the example; read-only preview
+of unsaved terrain and entities; object placements; preview reference errors;
+terminal viewport clipping on a 256×256 map and fixed columns for wide glyphs.
 
 ## Native verification
 
@@ -50,6 +53,12 @@ window sizes; observed frame time was about 1.3–1.7 ms and stroke commit/refre
 about 48–64 ms in the development build.
 These are local observations, not a cross-machine performance guarantee. There is
 one DrawingArea and no per-cell widget allocation.
+
+`scripts/preview_check.cr` clicks the actual native Preview button, opens a real
+Kitty window running the CLI, and inspects rendered terminal text through Kitty's
+test-only local control socket. It verifies an unsaved source edit, unchanged disk
+files, arrow/WASD panning, Q exit and removal of the temporary snapshot. Test
+world/configuration paths include spaces. This scenario passed on GNOME/Wayland.
 
 ## Limits and follow-up
 
