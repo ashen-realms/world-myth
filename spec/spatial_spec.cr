@@ -1,4 +1,5 @@
 require "./spec_helper"
+require "./support/spatial_fixture"
 
 def with_v2(&)
   with_world do |old|
@@ -106,6 +107,39 @@ describe "spatial world v2" do
     frame.cells[0].background.should eq("#101816")
     frame.put(0, 0, 9.0, 2, " ", "#ffffff", "#555555", hit, false)
     frame.cells[0].glyph.should eq(" ")
+  end
+
+  it "shows separate bridge occupants and hides upper surfaces using a cutaway" do
+    SpatialFixture.with_world do |p|
+      a = p.analyze
+      a.valid?.should be_true
+      renderer = SceneRenderer.new(a.maps["heartlands/village"], a, "heartlands/village")
+      camera = SceneCamera.new
+      camera.u, camera.v = -30.0, -10.0
+      frame = renderer.render(160, 80, camera)
+      frame.cells.any? { |c| c.hit.try(&.entity) == "npc.bridge.top" }.should be_true
+      camera.cutaway = true
+      camera.roofs = false
+      cut = renderer.render(160, 80, camera)
+      cut.cells.any? { |c| c.hit.try(&.entity) == "npc.bridge.top" }.should be_false
+      cut.cells.any? { |c| c.hit.try(&.entity) == "npc.bridge.below" }.should be_true
+    end
+  end
+
+  it "compiles surfaces, walls, directional frames and positions with reproducible output" do
+    SpatialFixture.with_world do |p|
+      output = Compiler.new(p.root).build
+      first = File.read(File.join(output, "world.sqlite"))
+      DB.open("sqlite3:#{output}/world.sqlite") do |db|
+        db.scalar("PRAGMA user_version").should eq(2_i64)
+        db.scalar("SELECT count(*) FROM walls").as(Int64).should be > 0
+        db.scalar("SELECT count(DISTINCT direction) FROM sprite_frames WHERE sprite_id='actor.ulf'").should eq(8_i64)
+        db.scalar("SELECT surface_id FROM position_surfaces WHERE entity_id='npc.bridge.top'").should eq("bridge")
+        db.scalar("PRAGMA integrity_check").should eq("ok")
+      end
+      Compiler.new(p.root).build
+      File.read(File.join(output, "world.sqlite")).should eq(first)
+    end
   end
 end
 

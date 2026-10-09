@@ -1,5 +1,5 @@
 # Integration check: runs real GTK widgets on a display, using only disposable worlds.
-require "../src/world_myth"
+require "../spec/support/world_fixture"
 require "../src/world_myth/gui/window"
 
 class GUICheck
@@ -14,8 +14,7 @@ class GUICheck
     @root = File.join(Dir.tempdir, "world-myth-gui-check-#{Random::Secure.hex(8)}")
     Dir.mkdir(@root)
     ENV["XDG_CONFIG_HOME"] = File.join(@root, "config")
-    source = File.expand_path("../examples/example-world", __DIR__)
-    FileUtils.cp_r(source, File.join(@root, "world"))
+    WorldFixture.create(File.join(@root, "world"))
     @workspace = WorldMyth::GUI::Window.new(app)
     @workspace.present(File.join(@root, "world"))
     GLib.timeout_milliseconds(450_u32) { step }
@@ -73,7 +72,7 @@ class GUICheck
     case @stage
     when 0
       assert(w.window.mapped, "native window is mapped")
-      assert(w.analysis.not_nil!.valid?, "example opens in GUI")
+      assert(w.analysis.not_nil!.valid?, "temporary world opens in GUI")
       w.capture("/tmp/world-myth-editor.png")
       paint("water")
       assert(w.current.not_nil!.model.as(WorldMyth::Core::Map).terrain_at(4, 2) == "water", "canvas stroke interpolates cells")

@@ -1,7 +1,0 @@
----
-schema_version: 1
-id: eldoria
-name: Eldoria
-version: 0.1.0
-description: A quiet frontier between ancient woods and the last lanterns of home.
-default_region: heartlands

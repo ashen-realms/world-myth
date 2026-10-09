@@ -34,3 +34,5 @@ def entity_yaml(id = "npc.ulf", type = "npc", position = "heartlands/meadow")
     greeting: Welcome
   YAML
 end
+
+require "./support/world_fixture"

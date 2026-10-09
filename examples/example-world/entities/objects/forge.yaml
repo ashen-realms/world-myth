@@ -1,9 +1,0 @@
-schema_version: 1
-id: object.forge
-type: object
-name: Village Forge
-tags: [craft, landmark]
-properties:
-  glyph: "⚒"
-  foreground: "#ea995f"
-  description: "The forge has burned through three long winters."

@@ -1,79 +1,85 @@
-# MVP 0.1 verification
+# World Myth 0.2 verification
 
-Reference environment: Fedora 43 / GNOME on 2026-10-09, Crystal 1.21.1 and the
-versions in development.md. These checks were run, not inferred from compilation.
+Reference environment: Fedora 43 / GNOME, 2026-10-09, Crystal 1.21.1 and the
+locked bindings documented in development.md. Results below are actual runs.
 
 | Check | Result |
 |---|---|
-| `crystal spec` | 34 examples, zero failures/errors |
-| Specs with DISPLAY and WAYLAND_DISPLAY unset | Pass |
-| `crystal tool format --check` | Pass |
-| `shards build` | CLI and GTK executables built |
-| CLI validate of example-world | Valid |
-| CLI build of example-world | SQLite and manifest produced |
-| Consecutive example builds | Identical SQLite and manifest SHA-256 values |
-| CLI `ldd` inspection | No GTK/Adwaita dependency |
-| Minimal native window | Launched; Cairo/Pango glyphs and GtkSource highlighting visually inspected |
-| Native GUI integration scenario | Launched on GNOME/Wayland; passed |
-| Real mouse/keyboard scenario | Launched on isolated X11/Xvfb display; passed |
-| Terminal Preview integration | GTK Preview button launched Kitty on GNOME/Wayland; unsaved edits, pan, Q and snapshot cleanup passed |
+| Crystal Spec | 45 examples, zero failures/errors |
+| Specs without DISPLAY/WAYLAND_DISPLAY | Passed |
+| `crystal tool format --check` | Passed |
+| `shards build` | Both applications built |
+| CLI new, validate and build, temporary v2 world | Valid; SQLite v2 and manifest produced |
+| Disposable v1/v2 fixtures in Specs | Validation, compilation and SQLite integrity passed |
+| Repeated builds in Specs | Identical database bytes |
+| Native legacy GUI scenario | Passed after converting test input to projected coordinates |
+| Native isometric GUI scenario | Elevated painting, undo, sprite gestures, frame duplication and reload passed |
+| Real X11/XTest input | Painting, pan, zoom, shortcuts, native Create/Open dialogs passed |
+| Real GTK → Kitty scenario | Unsaved source, pan, animation, pause, surface/cutaway, exit and cleanup passed |
 
-## Core coverage
+## Coverage
 
-Creation without overwriting an existing directory; YAML/map serialization;
-terrain, object and collision painting/erasing; continuous stroke undo/redo;
-stale revision rejection; comments/normalization; malformed YAML preservation;
-external changes; schema versions and unexpected keys; duplicate IDs/YAML keys;
-map dimensions, legends and references; entity types/properties/positions;
-qualified reference ambiguity; UTF-8 glyph separation; viewport zoom coordinates;
-CLI help/errors/format behavior; read-only SQLite content and integrity;
-repeatable builds; publication rollback and interrupted-build recovery;
-concurrent compiler exclusion; pre-replacement save failure; Markdown preservation;
-Git-optional behavior; all entity/layer content in the example; read-only preview
-of unsaved terrain and entities; object placements; preview reference errors;
-terminal viewport clipping on a 256×256 map and fixed columns for wide glyphs.
+The original 30 core cases cover creation, serialization, validation, references,
+source/history, comment normalization, external conflicts, Git-optional operation,
+safe build publication/recovery, compiler locking and SQLite integrity. Preview
+cases cover snapshot isolation, object rendering, clipping, unsupported legacy
+glyph fallback and CLI argument errors.
 
-## Native verification
+Spatial cases cover v1-to-v2 copying without modifying originals, explicit consent
+for comment normalization, new projects defaulting to v2, v1 edits excluding v2
+fields, height/slope/wall/surface edits with undo/redo, sprite palette/timing/reference
+validation, deterministic animation and directional fallback, non-looping clips,
+elevated picking, transparency/depth composition, offscreen sprite anchors, render
+consistency across prior camera views, bridge occupants/cutaway, runtime assets and
+surface references, repeated builds, and safe creation of sprite source files.
 
-`scripts/gui_check.cr` opens a disposable copy of Eldoria in actual GTK widgets.
-It exercises painting, erasure, native Undo/Redo/Save buttons, pan/zoom, source
-editing, validation diagnostics, explicit normalization and undo restoring
-comments, entity inspector changes, GUI compilation, and Cancel on the native
-unsaved-changes dialog. It renders and captures the workspace using GTK's own
-snapshot/renderer API. Both ordinary and wide Unicode glyphs were visually checked.
+## Native checks
 
-`scripts/input_check.cr` uses XTest to deliver real pointer and keyboard events:
-drag painting, middle-button pan, Ctrl-scroll zoom, Ctrl+Z/Ctrl+Shift+Z, Ctrl+S,
-and source-editor undo. It also exercises Create/Open World through native file
-dialogs. Tests select paths only under temporary directories. Dialog tests force
-GC while open to cover callback lifetime handling. XTest is not part of the app.
+`make gui-check` creates a disposable v1 world and exercises native buttons,
+source diagnostics, explicit normalization, entity edits, compilation, a 256×256
+map, and the unsaved-changes dialog. `make input-check` sends real XTest mouse and
+keyboard events on an isolated Xvfb display, including native file selection.
+The test-only FileChooserDialog inspection still emits GTK deprecation warnings;
+production selection uses FileDialog.
 
-On the 256×256 GUI fixture, viewport culling drew 312–403 cells at the tested
-window sizes; observed frame time was about 1.3–1.7 ms and stroke commit/refresh
-about 48–64 ms in the development build.
-These are local observations, not a cross-machine performance guarantee. There is
-one DrawingArea and no per-cell widget allocation.
+`make isometric-check` creates a layered test world with real GTK widgets. It
+creates an elevated surface and paints it, checks undo/redo, opens the native sprite
+editor, emits its actual GTK drag signals, duplicates/reorders a frame, plays the
+animation, and saves/reloads a valid world. Captures use GTK's own renderer and are
+stored under `/tmp/world-myth-isometric-*.png`. This test does not claim physical
+mouse input for sprite gestures; the separate XTest test covers map input.
 
-`scripts/preview_check.cr` clicks the actual native Preview button, opens a real
-Kitty window running the CLI, and inspects rendered terminal text through Kitty's
-test-only local control socket. It verifies an unsaved source edit, unchanged disk
-files, arrow/WASD panning, Q exit and removal of the temporary snapshot. Test
-world/configuration paths include spaces. This scenario passed on GNOME/Wayland.
+`make preview-check` opens actual Kitty windows from the GTK Preview button. A
+private test configuration enables a local Unix control socket used to inspect
+rendered text and send keys. It verifies real animation changes and paused text,
+selects an upper surface/cutaway, closes the viewer and checks snapshot cleanup.
+Production does not enable this socket.
 
-## Limits and follow-up
+## Performance observations and limits
 
-- Tested on the documented Fedora/GNOME toolchain. Other Linux versions and
-  cross-platform packaging are unverified.
-- New world creation is graphical. Additional region/map/entity definitions can
-  be authored as source files; dedicated creation/rename wizards are a useful next
-  increment.
-- YAML normalization intentionally removes comments only after explicit consent.
-  Comment-preserving structural edits are a future improvement.
-- The SQLite format is internal. Define reader compatibility with Axiom before
-  introducing gameplay-specific fields or integration promises.
-- Build publication recovers ordinary failures and interrupted renames; see
-  compilation.md for the power-loss/concurrent-reader limitation.
-- No procedural generator, gameplay preview, multiplayer, or player state is
-  implemented. The generator boundary is documentation only, as specified.
-- Additional usability work could add flood fill, rectangle selection, entity
-  creation dialogs, and per-document viewport persistence without changing Core.
+`make benchmark` uses 256×256 cells, three surfaces and 100 animated placements.
+After introducing lazy geometry, an observed development run took about 98 ms for
+analysis, 33–34 ms for preparation, and 3.1–4.3 ms median / 5.5–8.7 ms p95 per 120×40 glyph
+frame across two runs (1,825 candidate primitives). A standalone native demo run
+reported about 12.8 ms for a drawn GTK frame. The first view also creates its visible terrain
+geometry; preparation is not the complete cold-render cost. Native drawing adds
+Pango/Cairo and compositor work. Earlier GTK measurements under concurrent builds
+varied substantially; these numbers are local observations, not a frame-rate
+promise for every machine or terminal.
+
+After replacing checked-in worlds with disposable fixtures, another run under
+concurrent builds measured 177 ms analysis, 66 ms preparation and 7.6 ms median /
+14.2 ms p95 rendering (1,824 candidates). The native layered fixture drew a frame
+in 16.9 ms. These measurements include different test data and system load.
+
+The renderer caches scene geometry and prepares terrain only for visible ranges;
+it does not parse YAML during animation or create a widget per map tile. Terminal
+updates emit changed cells. Map edits invalidate the scene cache; document parsing
+and validation remain synchronous during visual editing.
+
+Known boundaries: fixed camera orientation; restricted art alphabet; explicit
+surface filtering rather than automatic room/roof detection; no arbitrary meshes,
+physical simulation, pathfinding, multiplayer or Axiom integration. The schema is
+an internal v2 contract. YAML visual edits still require explicit normalization of
+comments. Additional map/entity creation beyond the existing GUI tools is available
+through source files; no full asset-management system is implied.

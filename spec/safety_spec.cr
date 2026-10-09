@@ -136,16 +136,9 @@ describe "World format and persistence safeguards" do
     end
   end
 
-  it "compiles the checked-in example with every layer and entity type" do
-    root = File.expand_path("../examples/example-world", __DIR__)
-    Project.new(root).analyze.valid?.should be_true
-    with_world do |project|
-      source = Project.new(root)
-      source.discover.each do |path|
-        full = File.join(project.root, path)
-        FileUtils.mkdir_p(File.dirname(full))
-        File.write(full, File.read(File.join(root, path)))
-      end
+  it "compiles a disposable world with every layer and entity type" do
+    WorldFixture.with_world do |project|
+      project.analyze.valid?.should be_true
       database = File.join(Compiler.new(project.root).build, "world.sqlite")
       DB.open("sqlite3:#{database}?mode=ro") do |db|
         db.scalar("SELECT count(*) FROM maps").should eq(2_i64)

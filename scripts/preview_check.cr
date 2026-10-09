@@ -1,5 +1,5 @@
 # Real GTK button -> Kitty -> headless CLI integration, using a disposable world.
-require "../src/world_myth"
+require "../spec/support/spatial_fixture"
 require "../src/world_myth/gui/window"
 
 class PreviewCheck
@@ -12,6 +12,9 @@ class PreviewCheck
   @snapshots = [] of String
   @before : Array(String)
   @original : String
+  @animated_text = ""
+  @paused_text = ""
+  @settle = 0
 
   def initialize(@app : Adw::Application)
     @root = File.join(Dir.tempdir, "world myth preview #{Random::Secure.hex(6)}")
@@ -64,7 +67,7 @@ class PreviewCheck
       @socket = socket
       text = remote(["get-text"])
       return true unless text.includes?("World Myth | heartlands/meadow")
-      raise "Unsaved source not visible in terminal" unless text.lines[1].starts_with?("♣")
+      raise "Unsaved source not visible in terminal" unless text.includes?("♣")
       raise "Source was saved by preview" unless File.read(File.join(@root, "world/regions/heartlands/maps/meadow.yaml")) == @original
       @snapshots = Dir.glob(File.join(Dir.tempdir, "world-myth-preview-*.json")) - @before
       raise "Snapshot not created" if @snapshots.empty?
@@ -81,6 +84,50 @@ class PreviewCheck
     when 3
       return true if @snapshots.any? { |path| File.exists?(path) }
       puts "PASS Q exits and removes the preview snapshot"
+      iso = SpatialFixture.create(File.join(@root, "iso"))
+      @workspace.open_project(iso.root)
+      @workspace.open_document("regions/heartlands/maps/village.yaml")
+      find_button(@workspace.window).not_nil!.clicked_signal.emit
+      @socket = ""
+      @stage = 4
+    when 4
+      return true unless socket = Dir.glob(File.join(@root, "control-*")).first?
+      @socket = socket
+      text = remote(["get-text"])
+      return true unless text.includes?("World Myth | heartlands/village")
+      remote(["send-text", "rssssss"])
+      @stage = 5
+    when 5
+      text = remote(["get-text"])
+      return true unless text.includes?("Y:6") && text.includes?("█")
+      if @animated_text.empty?
+        @animated_text = text
+        return true
+      end
+      return true if text == @animated_text
+      puts "PASS directional Unicode sprite animation changes actual terminal text"
+      remote(["send-text", " "])
+      @stage = 6
+    when 6
+      @settle += 1
+      return true if @settle < 2
+      text = remote(["get-text"])
+      if @paused_text.empty?
+        @paused_text = text
+        return true
+      end
+      raise "Animation did not pause" unless text == @paused_text
+      puts "PASS Space pauses terminal animation"
+      remote(["send-text", "\\tc"])
+      @stage = 7
+    when 7
+      return true unless remote(["get-text"]).includes?("upper-floor")
+      puts "PASS terminal surface selection and cutaway"
+      @snapshots = Dir.glob(File.join(Dir.tempdir, "world-myth-preview-*.json")) - @before
+      remote(["send-text", "q"])
+      @stage = 8
+    when 8
+      return true if @snapshots.any? { |path| File.exists?(path) }
       puts "PREVIEW_CHECK_OK"
       @app.quit
       return false

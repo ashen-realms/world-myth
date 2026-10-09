@@ -19,7 +19,7 @@ installation uses `shards install --frozen --skip-postinstall` and
 and the Crystal compiler's normal native dependencies are still needed.
 
 `crystal tool format --check` checks repository Crystal sources. `make check`
-runs Core/CLI specs, formatting, both builds and example validation/compilation.
+runs Core/CLI specs, formatting, both builds and temporary-world validation/compilation.
 `make gui-check` additionally opens native windows on the current display and
 runs the integration scenario against temporary data. `scripts/native_smoke.cr`
 is the original minimal GTK/Adwaita/SourceView/Cairo/Pango reproduction.
@@ -111,11 +111,29 @@ Kitty only; `world-myth preview PATH --map REGION/MAP` can be used directly in
 another ANSI/truecolor Linux terminal. CLI preview uses Linux `TIOCGWINSZ` and
 Crystal raw console mode, restores the terminal on normal exit/errors, and handles
 resizes, arrow/WASD panning, Q/Esc/Ctrl+C exit. It requires an interactive TTY.
-All preview sources must validate. Glyph appearance and unusual multi-codepoint
-cluster widths depend on the terminal/font; cells reserve two terminal columns.
+All preview sources must validate. The v2 art alphabet uses single-column text characters and a shared isometric
+character framebuffer. Legacy unsupported glyphs produce warnings and render as ?.
 
 `make preview-check` launches real GTK and Kitty windows with a disposable project
 and isolated Kitty configuration. The test enables a private Unix control socket
 for that Kitty instance only, inspects its rendered text, sends input, and checks
 unsaved source preview and snapshot cleanup. It requires a graphical display and
 Kitty. Production Preview does not enable remote control or any network service.
+
+## Isometric development checks
+
+Version 0.2 uses the existing Crystal/native dependencies; no new shard, browser,
+image protocol or service is needed. `make isometric-check` creates a layered
+test world in real GTK widgets, exercises elevated painting and sprite gesture/button
+callbacks, saves and validates the result. `make preview-check` additionally opens
+that temporary world in Kitty, observes real animated text, pauses playback and selects a
+cutaway surface. `make benchmark` measures model analysis, lazy geometry preparation
+and steady-state rendering separately on a 256×256 fixture with three surfaces and
+100 animated placements. Its base fixture is created in a temporary directory and
+removed before the in-memory benchmark runs.
+
+`spec/support/world_fixture.cr` and `spec/support/spatial_fixture.cr` build
+disposable fixtures from the application's project-creation API. Core tests and
+native checks use these helpers without checked-in world projects. They cover
+legacy v1 compatibility, layered v2 maps, walls and animated Unicode sprites;
+they are test data builders, not procedural world generators.

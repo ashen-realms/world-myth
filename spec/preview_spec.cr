@@ -17,13 +17,14 @@ describe WorldMyth::Core::Preview do
   end
 
   it "renders object placements and refuses broken references" do
-    project = Project.new(File.expand_path("../examples/example-world", __DIR__))
-    preview = Preview.new(project.analyze, "heartlands/village")
-    preview.cell(5, 4)[0].should eq("⚒")
-    expect_raises(DocumentError, /Unknown or ambiguous map/) { Preview.new(project.analyze, "missing") }
-    sources = project.snapshot
-    sources["terrain.yaml"] = "invalid: ["
-    expect_raises(DocumentError, /Preview requires a valid world/) { Preview.new(Analysis.new(sources), "heartlands/village") }
+    WorldFixture.with_world do |project|
+      preview = Preview.new(project.analyze, "heartlands/village")
+      preview.cell(5, 4)[0].should eq("⚒")
+      expect_raises(DocumentError, /Unknown or ambiguous map/) { Preview.new(project.analyze, "missing") }
+      sources = project.snapshot
+      sources["terrain.yaml"] = "invalid: ["
+      expect_raises(DocumentError, /Preview requires a valid world/) { Preview.new(Analysis.new(sources), "heartlands/village") }
+    end
   end
 
   it "clips large maps to a viewport and keeps wide glyphs on fixed cell boundaries" do
