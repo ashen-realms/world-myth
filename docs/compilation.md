@@ -1,4 +1,4 @@
-# Runtime package format 1
+# Runtime package format 2
 
 `world-myth build [project]` discovers saved source files, parses and validates
 all documents, resolves references, normalizes data and writes a new SQLite
@@ -11,7 +11,7 @@ Axiom or Aether compatibility. Runtime player state is never included.
 
 ## SQLite schema
 
-`PRAGMA user_version = 1`. Text identifiers are stable source IDs. Foreign keys
+`PRAGMA user_version = 2` (v1 was used before World Myth 0.2). Text identifiers are stable source IDs. Foreign keys
 are checked during compilation. Tables:
 
 | Table | Key / contents |
@@ -61,3 +61,32 @@ while it is being published. No WAL sidecars are required.
 
 Generated artifacts, staging/backup directories and the build lock are ignored by
 Git. Source validation failures leave the previous published package untouched.
+
+## Runtime schema v2
+
+World Myth 0.2 writes `PRAGMA user_version = 2` and manifest `schema_version: 2`,
+including when compiling legacy v1 sources. This is an internal format change;
+old readers must reject it rather than assume v1. Existing metadata, `cells`,
+`layers`, entities and placement tables remain, with `cells` describing ground.
+The additional tables are:
+
+| Table | Content / key |
+|---|---|
+| `sprites` | ID, name, dimensions, anchor, default direction, canonical palette JSON |
+| `animations` | `(sprite_id,id)`, loop flag |
+| `sprite_frames` | `(sprite_id,animation_id,direction,ordinal)`, duration and ASCII row JSON |
+| `surfaces` | `(region_id,map_id,id)`, surface kind |
+| `surface_cells` | `(region_id,map_id,surface_id,y,x)`, elevation, shape, terrain ID, collision |
+| `walls` | Map-local ID, surface, coordinates, edge, height, material |
+| `entity_visuals` | Entity ID, optional sprite ID, default animation |
+| `terrain_visuals` | Terrain ID, optional top and side sprite IDs |
+| `placement_surfaces` | Object placement's supporting surface and facing |
+| `position_surfaces` | Entity position's supporting surface and facing |
+
+Only occupied surface cells are written. Dimensions come from `maps`; missing
+cells in additional surfaces are empty. Ground is also present in `surface_cells`
+with zero heights for v1. Foreign keys link assets and supporting surfaces. Source
+validation additionally checks support at the actual x/y coordinate, animation
+names, directions and frame/palette consistency. Sprite art is fully embedded;
+the runtime package needs no world-source files. Insert order remains stable and
+compilation includes no current animation time or player state.

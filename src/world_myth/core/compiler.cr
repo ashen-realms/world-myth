@@ -2,7 +2,7 @@ require "sqlite3"
 
 module WorldMyth::Core
   class Compiler
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
     getter root : String
 
     def initialize(@root)
@@ -124,6 +124,7 @@ module WorldMyth::Core
               connection.exec("INSERT INTO entity_positions VALUES (?,?,?,?,?)", id, key[0], key[1], pos.x, pos.y)
             end
           end
+          compile_spatial(connection, a)
           a.sources.keys.sort.select { |p| Source.kind(p) == "lore" }.each do |p|
             connection.exec("INSERT INTO lore VALUES (?,?)", p, a.sources[p])
           end

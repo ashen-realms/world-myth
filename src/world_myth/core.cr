@@ -7,6 +7,7 @@ module WorldMyth::Core
 end
 
 require "set"
+require "./core/spatial"
 require "./core/model"
 require "./core/source"
 require "random/secure"
@@ -16,3 +17,6 @@ require "./core/editing"
 require "./core/compiler"
 require "./core/git_status"
 require "./core/preview"
+require "./core/spatial_validation"
+require "./core/migration"
+require "./core/spatial_compilation"

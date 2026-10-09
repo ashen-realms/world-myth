@@ -8,7 +8,7 @@ def with_world(&)
   directory = File.join(Dir.tempdir, "world-myth-spec-#{Random::Secure.hex(8)}")
   Dir.mkdir(directory)
   begin
-    project = Project.create(File.join(directory, "world"), "Test World")
+    project = Project.create(File.join(directory, "world"), "Test World", 1)
     yield project
   ensure
     FileUtils.rm_r(directory)

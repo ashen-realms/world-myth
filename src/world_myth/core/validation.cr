@@ -9,6 +9,7 @@ module WorldMyth::Core
     getter regions = {} of String => Region
     getter maps = {} of String => Map
     getter entities = {} of String => Entity
+    getter sprites = {} of String => Sprite
     getter paths = {} of String => String
     getter parsed = {} of String => Definition
     @region_folders = {} of String => String
@@ -59,7 +60,7 @@ module WorldMyth::Core
         begin
           if definition = Source.parse(path, sources[path])
             parsed[path] = definition
-            error("schema_version", "Unsupported schema version #{definition.schema_version}; expected 1", path, "schema_version") unless definition.schema_version == 1
+            error("schema_version", "Unsupported schema version #{definition.schema_version}; expected 1 or 2", path, "schema_version") unless {1, 2}.includes?(definition.schema_version)
           end
         rescue ex : YAML::ParseException
           diagnostics << Diagnostic.new(Severity::Error, "yaml", ex.message || "Malformed YAML", path, ex.line_number, ex.column_number)
@@ -81,6 +82,9 @@ module WorldMyth::Core
         when Entity
           identifier(value.id, path)
           insert(entities, value.id, value, path, "entity")
+        when Sprite
+          identifier(value.id, path)
+          insert(sprites, value.id, value, path, "sprite")
         end
       end
       parsed.each do |path, value|
@@ -139,6 +143,7 @@ module WorldMyth::Core
       end
       maps.each { |key, map| validate_map(key, map) }
       entities.each { |id, entity| validate_entity(id, entity) }
+      validate_spatial
     end
 
     private def glyph?(value : String) : Bool

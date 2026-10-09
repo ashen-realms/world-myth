@@ -27,6 +27,8 @@ module WorldMyth::Core
     property background : String = "#101816"
     property passable : Bool
     property movement_cost : Float64
+    property sprite : String? = nil
+    property side_sprite : String? = nil
   end
 
   class Catalog
@@ -42,6 +44,8 @@ module WorldMyth::Core
     property map : String
     property x : Int32
     property y : Int32
+    property surface : String = "ground"
+    property facing : String = "S"
 
     def initialize(@map, @x, @y)
     end
@@ -57,6 +61,8 @@ module WorldMyth::Core
     property tags : Array(String) = [] of String
     property position : Position?
     property properties : Hash(String, YAML::Any) = {} of String => YAML::Any
+    property sprite : String? = nil
+    property animation : String = "idle"
 
     def glyph : String
       properties["glyph"]?.try(&.as_s?) || {"npc" => "@", "item" => "!", "monster" => "M", "object" => "+"}[type]? || "?"
@@ -74,6 +80,8 @@ module WorldMyth::Core
     property entity : String
     property x : Int32
     property y : Int32
+    property surface : String = "ground"
+    property facing : String = "S"
 
     def initialize(@id, @entity, @x, @y)
     end
@@ -85,6 +93,8 @@ module WorldMyth::Core
     property terrain : Array(String)
     property collision : Array(String)
     property objects : Array(Placement) = [] of Placement
+    property elevation : Array(String) = [] of String
+    property shapes : Array(String) = [] of String
   end
 
   class Map
@@ -98,6 +108,17 @@ module WorldMyth::Core
     property default_terrain : String
     property legend : Hash(String, String)
     property layers : Layers
+    property surfaces : Array(Surface) = [] of Surface
+    property walls : Array(Wall) = [] of Wall
+
+    def surface(id = "ground") : Surface
+      return surfaces.find { |s| s.id == id } || raise DocumentError.new("Unknown surface #{id}") unless id == "ground"
+      Surface.new("ground", "ground", layers.terrain, layers.collision, layers.elevation, layers.shapes)
+    end
+
+    def all_surfaces : Array(Surface)
+      [surface] + surfaces
+    end
 
     def inside?(x : Int32, y : Int32) : Bool
       x >= 0 && y >= 0 && x < width && y < height
@@ -131,7 +152,7 @@ module WorldMyth::Core
     end
   end
 
-  alias Definition = World | Region | Catalog | Map | Entity
+  alias Definition = World | Region | Catalog | Map | Entity | Sprite
 
   enum Severity
     Error

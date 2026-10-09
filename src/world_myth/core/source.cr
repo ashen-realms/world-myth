@@ -59,6 +59,7 @@ module WorldMyth::Core
       when /\Aregions\/[^\/]+\/region\.yaml\z/        then "region"
       when /\Aregions\/[^\/]+\/maps\/[^\/]+\.ya?ml\z/ then "map"
       when /\Aentities\/.+\.ya?ml\z/                  then "entity"
+      when /\Asprites\/.+\.ya?ml\z/                   then "sprite"
       when /\Alore\/.+\.md\z/                         then "lore"
       else                                                 "source"
       end
@@ -73,6 +74,7 @@ module WorldMyth::Core
       when "region"  then Region.from_yaml(text)
       when "map"     then Map.from_yaml(text)
       when "entity"  then Entity.from_yaml(text)
+      when "sprite"  then Sprite.from_yaml(text)
       else                nil
       end
     end
@@ -80,6 +82,32 @@ module WorldMyth::Core
     def canonical(text : String) : String
       check_syntax(text)
       canonical_value(YAML.parse(text)).to_yaml
+    end
+
+    # Keep edits to legacy projects readable by the original strict v1 reader.
+    def serialize(value : Definition) : String
+      return value.to_yaml unless value.schema_version == 1
+      tree = YAML.parse(value.to_yaml)
+      root = tree.as_h
+      case value
+      when Map
+        %w(surfaces walls).each { |key| root.delete(YAML::Any.new(key)) }
+        layers = root[YAML::Any.new("layers")].as_h
+        %w(elevation shapes).each { |key| layers.delete(YAML::Any.new(key)) }
+        layers[YAML::Any.new("objects")].as_a.each do |object|
+          %w(surface facing).each { |key| object.as_h.delete(YAML::Any.new(key)) }
+        end
+      when Entity
+        %w(sprite animation).each { |key| root.delete(YAML::Any.new(key)) }
+        if position = root[YAML::Any.new("position")]?.try(&.as_h?)
+          %w(surface facing).each { |key| position.delete(YAML::Any.new(key)) }
+        end
+      when Catalog
+        root[YAML::Any.new("terrain")].as_h.each_value do |terrain|
+          %w(sprite side_sprite).each { |key| terrain.as_h.delete(YAML::Any.new(key)) }
+        end
+      end
+      tree.to_yaml
     end
 
     def canonical_value(value : YAML::Any) : YAML::Any
@@ -139,7 +167,7 @@ module WorldMyth::Core
       # Mutate a detached projection: failed operations never leak into the session.
       copy = Source.parse(path, text).not_nil!
       yield copy
-      replace(copy.to_yaml, label)
+      replace(Source.serialize(copy), label)
     end
 
     def undo

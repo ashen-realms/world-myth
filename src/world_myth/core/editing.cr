@@ -6,7 +6,7 @@ module WorldMyth::Core
     @revision : Int64
     @last : Tuple(Int32, Int32)?
 
-    def initialize(@document : Document, @layer : String, @value : String, @erase = false)
+    def initialize(@document : Document, @layer : String, @value : String, @erase = false, @surface = "ground")
       raise NormalizationRequired.new("Normalize this YAML before visual editing") if @document.sensitive?
       @map = Source.parse(@document.path, @document.text).as(Map)
       @revision = @document.revision
@@ -23,7 +23,7 @@ module WorldMyth::Core
     end
 
     def commit
-      @document.replace(map.to_yaml, @erase ? "Erase #{@layer}" : "Paint #{@layer}", @revision) if changed
+      @document.replace(Source.serialize(map), @erase ? "Erase #{@layer}" : "Paint #{@layer}", @revision) if changed
     end
 
     def self.line(x0 : Int32, y0 : Int32, x1 : Int32, y1 : Int32, &)
@@ -46,26 +46,52 @@ module WorldMyth::Core
     end
 
     private def paint(x : Int32, y : Int32)
+      surface = map.surface(@surface)
       case @layer
-      when "terrain", "collision"
+      when "terrain", "collision", "height", "shape"
         symbol = if @layer == "terrain"
-                   map.symbol_for(@erase ? map.default_terrain : @value)
+                   @erase && @surface != "ground" ? " " : map.symbol_for(@erase ? map.default_terrain : @value)
+                 elsif @layer == "height"
+                   raise DocumentError.new("Create a v2 copy to edit heights") if map.schema_version == 1
+                   (@erase ? 0 : @value.to_i.clamp(-64, 64)).to_s
+                 elsif @layer == "shape"
+                   raise DocumentError.new("Create a v2 copy to edit slopes") if map.schema_version == 1
+                   @erase ? "." : @value
                  else
                    @erase ? "." : @value
                  end
-        return if map.symbol_at(@layer, x, y) == symbol
-        map.set_symbol(@layer, x, y, symbol)
+        before = case @layer
+                 when "terrain"   then surface.symbol(x, y)
+                 when "collision" then surface.collision[y].byte_at(x).chr.to_s
+                 when "height"    then surface.height_at(x, y).to_s
+                 else                  surface.shape(x, y).to_s
+                 end
+        return if before == symbol
+        surface.set(@layer, x, y, symbol)
       when "objects"
-        existing = map.layers.objects.select { |p| p.x == x && p.y == y }
+        return if surface.symbol(x, y) == " "
+        existing = map.layers.objects.select { |p| p.x == x && p.y == y && p.surface == @surface }
         return if @erase && existing.empty?
         return if !@erase && existing.size == 1 && existing.first.entity == @value
-        map.layers.objects.reject! { |p| p.x == x && p.y == y }
+        map.layers.objects.reject! { |p| p.x == x && p.y == y && p.surface == @surface }
         unless @erase
           id = "object-#{x}-#{y}"
           while map.layers.objects.any? { |p| p.id == id }
             id += "-copy"
           end
-          map.layers.objects << Placement.new(id, @value, x, y)
+          object = Placement.new(id, @value, x, y)
+          object.surface = @surface
+          map.layers.objects << object
+        end
+      when "wall"
+        raise DocumentError.new("Create a v2 copy to edit walls") if map.schema_version == 1
+        return if surface.symbol(x, y) == " "
+        material, edge, height = @value.split(':')
+        map.walls.reject! { |w| w.surface == @surface && w.x == x && w.y == y && w.edge == edge }
+        unless @erase
+          wall = Wall.new("wall-#{@surface}-#{x}-#{y}-#{edge.downcase}", x, y, material)
+          wall.surface, wall.edge, wall.height = @surface, edge, height.to_i.clamp(1, 32)
+          map.walls << wall
         end
       else
         raise ArgumentError.new("Unknown layer #{@layer}")

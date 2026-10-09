@@ -10,6 +10,7 @@ module WorldMyth::CLI
     world-myth validate [path]
     world-myth build [path]
     world-myth preview [path] --map <region/map>
+    world-myth migrate [path] --output <new-directory> [--allow-comment-loss]
     world-myth fmt [path] [--check] [--allow-comment-loss]
     world-myth --help | --version
 
@@ -28,7 +29,7 @@ module WorldMyth::CLI
       output.puts WorldMyth::VERSION
       return 0
     end
-    unless {"new", "validate", "build", "fmt", "preview"}.includes?(command)
+    unless {"new", "validate", "build", "fmt", "preview", "migrate"}.includes?(command)
       err.puts "Unknown command: #{command}\n#{HELP}"
       return 2
     end
@@ -38,23 +39,28 @@ module WorldMyth::CLI
     help = false
     map_reference : String? = nil
     snapshot : String? = nil
+    destination : String? = nil
     OptionParser.parse(rest) do |parser|
       parser.on("--check", "Check formatting without writing") { check = true }
       parser.on("--allow-comment-loss", "Explicitly allow YAML normalization") { allow = true }
       parser.on("--help", "Show help") { help = true }
       parser.on("--map MAP", "Map reference for terminal preview") { |value| map_reference = value }
       parser.on("--snapshot FILE", "Preview a desktop source snapshot (internal)") { |value| snapshot = value }
+      parser.on("--output DIRECTORY", "Destination for a migrated v2 copy") { |value| destination = value }
     end
     if help
       output.puts HELP
       return 0
     end
-    if rest.size > 1 || (command == "new" && rest.empty?) || (command != "fmt" && (check || allow)) || (command != "preview" && (map_reference || snapshot)) || (command == "preview" && (!map_reference || (snapshot && !rest.empty?)))
+    if rest.size > 1 || (command == "new" && rest.empty?) || (command != "fmt" && check) || (!{"fmt", "migrate"}.includes?(command) && allow) || (command != "migrate" && destination) || (command == "migrate" && !destination) || (command != "preview" && (map_reference || snapshot)) || (command == "preview" && (!map_reference || (snapshot && !rest.empty?)))
       err.puts HELP
       return 2
     end
     path = File.expand_path(rest.first? || ".")
     case command
+    when "migrate"
+      result = Core::Migration.copy(Core::Project.new(path).snapshot, File.expand_path(destination.not_nil!), allow)
+      output.puts "Created v2 copy: #{result.root}"
     when "preview"
       analysis = if snapshot_file = snapshot
                    Core::Analysis.new(Hash(String, String).from_json(File.read(snapshot_file)))

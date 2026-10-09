@@ -1,4 +1,7 @@
-# World source format 1
+# World source formats 1 and 2
+
+The initial sections describe the legacy v1 fields. The v2 extension below adds
+surfaces, walls and sprites; new projects use v2.
 
 A project is a directory containing `world.yaml`, `terrain.yaml`, `regions/`,
 `entities/`, and `lore/`. YAML/Markdown files are authoritative. `.worldmyth/`
@@ -20,7 +23,7 @@ Cross-document map references use `region-id/map-id`. A bare map ID is accepted
 only if exactly one map in the world declares it. Symlinks escaping the project
 are rejected during discovery.
 
-All structured documents require `schema_version: 1`. Unknown structural fields
+Legacy documents use `schema_version: 1`; v2 projects use `schema_version: 2`. Unknown structural fields
 are errors. Entity `properties` is the explicit extension field. The supported
 format is a single YAML document per file with string mapping keys.
 
@@ -156,3 +159,104 @@ malformed YAML disables visual map editing rather than losing the text.
 sensitive files unless `--allow-comment-loss` is given and never formats Markdown.
 `fmt --check` writes nothing and exits 1 if an eligible file needs formatting.
 Skipped files are reported and do not alone make the command fail.
+
+## Source format v2 (World Myth 0.2)
+
+New projects use v2. All typed documents in a project must match the world
+manifest's version. Existing v1 projects stay readable/editable; visual edits
+serialize their original v1 fields. Rendering adapts them to flat ground and
+legacy glyphs without rewriting sources. Use `world-myth migrate OLD --output NEW`
+or **Create v2 copy…** for spatial editing. The destination must not exist.
+Migration copies recognized world sources, not `.git`, build artifacts or unrelated
+files. It includes dirty GUI buffers. YAML normalization requires explicit
+`--allow-comment-loss` when comments/anchors are present; the original is untouched.
+
+### Coordinates and surfaces
+
+Map `layers.terrain` and `layers.collision` still describe the built-in surface
+`ground`. In v2 it also has `elevation` (rows of space-separated integers) and
+`shapes` (ASCII rows). A map's optional `surfaces` array contains additional grids:
+
+```yaml
+surfaces:
+  - id: bridge
+    kind: platform
+    terrain: [" dd ", " dd "]
+    collision: ["....", "...."]
+    elevation: ["4 4 4 4", "4 4 4 4"]
+    shapes: ["....", "...."]
+walls:
+  - id: north-wall
+    surface: ground
+    x: 1
+    y: 1
+    edge: N
+    height: 6
+    material: wall
+```
+
+Every grid has the map's full width and height. A space in an additional terrain
+surface means absence, not a terrain type. Kinds are `ground`, `floor`, `platform`
+and `roof`. Heights are integers from -64 to 64. Shapes: `.` flat; `n/e/s/w` slopes
+rising one unit toward that map direction; uppercase `N/E/S/W` four-step stairs.
+Map north is decreasing y, east increasing x. Walls occupy a cell edge N/E/S/W,
+are 1–32 height units tall, and use a terrain material ID. Duplicate walls on an
+edge are invalid. At most 32 surfaces and 4,194,304 grid cells across all surfaces
+are supported. Grid dimensions are explicit even for sparse elevated floors.
+
+Entity positions and object placements add `surface` (default `ground`) and
+`facing` (`N NE E SE S SW W NW`, default `S`). The selected surface must exist and
+contain terrain at that cell. The foot position is its center; z is sampled from
+the surface shape. Decorative height does not create collision or support.
+Erasing a supporting cell preserves placed content and reports invalid references
+until it is moved or the cell is restored. Ground sides are solid visual faces;
+other surfaces render thin slabs. This is an authoring model, not a physics engine.
+
+### Unicode sprite library
+
+Files under `sprites/**/*.yaml` define globally unique sprite IDs. Entities add
+`sprite` and `animation` (default `idle`); terrain definitions optionally add
+`sprite` for top patterns and `side_sprite` for side patterns.
+
+```yaml
+schema_version: 2
+id: actor.simple
+name: Simple actor
+width: 3
+height: 3
+anchor_x: 1
+anchor_y: 2
+default_direction: S
+palette:
+  h: {glyph: o, foreground: '#e8bb87'}
+  b: {glyph: '█', foreground: '#65a6bd'}
+  l: {glyph: '/', foreground: '#d6bb8b'}
+  r: {glyph: '\', foreground: '#d6bb8b'}
+animations:
+  idle:
+    loop: true
+    directions:
+      S:
+        - duration_ms: 400
+          rows: [' h ', ' b ', 'l r']
+```
+
+Rows contain **ASCII palette keys**, not raw art. Spaces are transparent. A palette
+entry with glyph `' '` and a background is opaque blank paint. Foreground is
+`#RRGGBB`; omitted background preserves the surface beneath. Sprite dimensions
+are 1–64 in both axes and every frame matches them. The anchor lies inside the
+sprite and is shared by all frames. It attaches the bottom of its symbol cell
+to the surface, preventing the terrain from clipping the feet.
+
+Supported glyphs are printable ASCII, Unicode U+2500–U+259F, and `·♣♠♥♦⚒`.
+This deliberately excludes emoji, combining sequences, wide characters and
+control sequences. Legacy unsupported glyphs display `?` with a warning and are
+preserved on disk. Terminal font/ambiguous-width settings can still affect appearance;
+Kitty's standard monospace treatment is the reference.
+
+Animations have ID names, looping or one-shot playback, and 1–256 frames per
+provided direction. Durations are 1–60000 ms. Every animation supplies the sprite's
+default direction; other absent directions fall back to it without mirroring.
+An `idle` animation is required. Animation state/timing is visual authoring data;
+it never moves NPCs or executes game behavior. Material patterns tile in projected
+character coordinates; transparent texture pixels retain the material background.

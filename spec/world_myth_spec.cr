@@ -187,7 +187,7 @@ describe WorldMyth do
       first = File.read(database)
       manifest = File.read(File.join(dist, "manifest.json"))
       DB.open("sqlite3:#{database}?mode=ro") do |db|
-        db.scalar("PRAGMA user_version").should eq(1_i64)
+        db.scalar("PRAGMA user_version").should eq(2_i64)
         db.scalar("PRAGMA integrity_check").should eq("ok")
         db.scalar("SELECT count(*) FROM cells").should eq(640_i64)
         db.scalar("SELECT map_id FROM entity_positions").should eq("meadow")

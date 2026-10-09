@@ -14,7 +14,7 @@ module WorldMyth::Core
 
     def discover : Array(String)
       files = ["world.yaml", "terrain.yaml"].select { |p| File.file?(File.join(root, p)) }
-      {"regions", "entities", "lore"}.each do |directory|
+      {"regions", "entities", "lore", "sprites"}.each do |directory|
         Dir.glob(File.join(root, directory, "**", "*")).sort.each do |full|
           next unless File.file?(full)
           relative = Path[full].relative_to(root).to_s
@@ -44,7 +44,31 @@ module WorldMyth::Core
     end
 
     def save_all
-      documents.each_value { |doc| doc.save(root) if doc.dirty? }
+      documents.each_value do |doc|
+        if doc.dirty?
+          check_document_path(doc.path)
+          FileUtils.mkdir_p(File.dirname(File.join(root, doc.path)))
+          doc.save(root)
+        end
+      end
+    end
+
+    def add_document(path : String, text : String)
+      check_document_path(path)
+      raise DocumentError.new("Document already exists: #{path}") if documents.has_key?(path) || File.exists?(File.join(root, path))
+      document = Document.new(path, "")
+      document.replace(text, "Create document")
+      documents[path] = document
+    end
+
+    private def check_document_path(path : String)
+      raise DocumentError.new("Unsafe source path") if Path[path].absolute? || path.split('/').includes?("..") || Source.kind(path) == "source"
+      parent = File.dirname(File.join(root, path))
+      until Dir.exists?(parent)
+        parent = File.dirname(parent)
+      end
+      resolved = File.realpath(parent)
+      raise DocumentError.new("Source directory escapes the project") unless resolved == root || resolved.starts_with?(root + "/")
     end
 
     def refresh_clean : Array(String)
@@ -65,7 +89,8 @@ module WorldMyth::Core
       conflicts
     end
 
-    def self.create(path : String, name : String) : Project
+    def self.create(path : String, name : String, schema_version = 2) : Project
+      raise DocumentError.new("Unsupported source version") unless {1, 2}.includes?(schema_version)
       raise DocumentError.new("Destination already exists: #{path}") if File.exists?(path)
       id = name.downcase.gsub(/[^a-z0-9_.-]+/, "-").strip('-')
       id = "world-#{id}" unless id.matches?(/\A[a-z]/)
@@ -75,7 +100,7 @@ module WorldMyth::Core
       staging = File.join(parent, ".worldmyth-new-#{Random::Secure.hex(8)}")
       Dir.mkdir(staging)
       begin
-        {"regions/heartlands/maps", "entities/npcs", "entities/items", "entities/monsters", "entities/objects", "lore", ".worldmyth"}.each do |directory|
+        {"regions/heartlands/maps", "entities/npcs", "entities/items", "entities/monsters", "entities/objects", "lore", "sprites", ".worldmyth"}.each do |directory|
           FileUtils.mkdir_p(File.join(staging, directory))
         end
         write = ->(file : String, text : String) { File.write(File.join(staging, file), text) }
@@ -122,6 +147,10 @@ module WorldMyth::Core
         write.call("lore/introduction.md", "# #{name}\n\nEvery path begins with a story.\n")
         write.call(".worldmyth/project.yaml", "schema_version: 1\n")
         write.call(".gitignore", "dist/\n.dist-*/\n.worldmyth/*.local.yaml\n.worldmyth/build.lock\n")
+        if schema_version == 2
+          Migration.sources(Project.new(staging).snapshot).each { |file, text| write.call(file, text) }
+          write.call(".worldmyth/project.yaml", "schema_version: 2\n")
+        end
         File.rename(staging, path)
       ensure
         FileUtils.rm_r(staging) if Dir.exists?(staging)
