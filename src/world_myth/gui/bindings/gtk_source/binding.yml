@@ -1,0 +1,7 @@
+namespace: GtkSource
+version: "5"
+# GtkSource 5.18 introduces a parameter named `annotation`, a Crystal keyword.
+# The MVP does not use the annotation-provider API.
+types:
+  AnnotationProvider:
+    ignore: true

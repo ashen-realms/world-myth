@@ -1,22 +1,94 @@
 # World Myth
 
-Offline world authoring tools in Crystal. YAML and Markdown are the source of
-truth; validated worlds compile to a standalone SQLite runtime artifact.
+An offline, native Crystal + GTK4 worldbuilding editor for a terminal ASCII MMORPG.
+Author maps, entities and lore in ordinary YAML/Markdown files, validate them, and
+compile a standalone SQLite world package. The desktop and headless CLI share the
+same domain code. No server, browser or web framework is involved.
+
+## Build on Fedora
+
+```sh
+sudo dnf install crystal shards gcc make pkgconf-pkg-config \
+  gtk4-devel libadwaita-devel gtksourceview5-devel \
+  gobject-introspection-devel cairo-devel pango-devel sqlite-devel libyaml-devel
+make setup
+shards build
+bin/world-myth-gtk examples/example-world
+```
+
+Requires Crystal 1.21.1 or later. Tested dependency versions and binding limitations
+are in [development](docs/development.md). Building fetches Shards dependencies;
+installed applications work offline.
+
+For a CLI-only build, GTK development packages and a display are unnecessary:
 
 ```sh
 shards install --frozen --skip-postinstall
-shards build
-crystal spec
+shards build world-myth
+```
+
+## CLI
+
+```sh
 bin/world-myth new my-world
 bin/world-myth validate examples/example-world
 bin/world-myth build examples/example-world
 bin/world-myth fmt my-world --check
+bin/world-myth --help
 ```
 
-Requires Crystal 1.21.1+, Shards, SQLite and libyaml development libraries.
-Core has no graphical dependencies. Source edits preserve original text until
-explicit normalization; saves detect external changes. Generated artifacts are
-ignored by Git, and failed builds preserve the previous valid artifact.
+`build` produces `dist/world.sqlite` and `dist/manifest.json`. It preserves the
+previous successful output if validation or compilation fails. `fmt` skips YAML
+comments unless explicitly authorized with `--allow-comment-loss`.
 
-See [world format](docs/world-format.md), [compilation](docs/compilation.md), and
-[design decisions](docs/adr/001-world-format.md). Apache-2.0; see [LICENSE](LICENSE).
+## Editor
+
+Create or open a project directory, then choose a map from the explorer. Select a
+layer, tool and palette entry. Drag to paint, choose Eraser to restore default
+terrain, and use Select to inspect cells. Middle-drag or Space-drag pans;
+Ctrl-scroll or the +/− buttons zooms. Visibility toggles independently show terrain,
+objects, collision overrides and grid lines. Red collision overlays block movement;
+green overlays explicitly allow it.
+
+Select entities to edit name, tags, position and scalar properties in the inspector.
+Use Source for raw YAML or Markdown. Invalid files remain editable, and validation
+errors navigate to source locations. Visual editing of commented YAML requires an
+explicit, undoable normalization preview. Saving detects external file changes and
+provides reload/save-copy recovery instead of silently overwriting another editor.
+
+Shortcuts: Ctrl+N new, Ctrl+O open, Ctrl+S save all, Ctrl+Z undo,
+Ctrl+Shift+Z redo, F5 validate, F6 build. Window/layout/rendering preferences and
+recent projects are local to your XDG configuration directory. Git status is
+read-only; Git itself is optional.
+
+## Verification
+
+```sh
+crystal spec
+crystal tool format --check
+shards build
+make gui-check  # requires a real graphical display
+```
+
+The GUI check launches native widgets and edits a disposable copy of the example.
+It does not modify the checked-in world. See [verification](docs/verification.md)
+for measured results and their limits.
+
+## Layout and boundaries
+
+- `src/world_myth/core/`: models, project discovery, document/history, validation,
+  editing, Git status and SQLite compilation; no GTK imports.
+- `src/world_myth/gui/`: Libadwaita workspace, GtkSourceView, Cairo/Pango canvas.
+- `src/world_myth/cli/`: argument handling using the same Core.
+- `spec/`: headless Crystal Specs; `scripts/`: native integration checks.
+- `examples/example-world/`: Eldoria, with two maps, entities and lore.
+- `docs/`: [architecture](docs/architecture.md), [world format](docs/world-format.md),
+  [runtime package](docs/compilation.md), [development](docs/development.md).
+
+MVP scope deliberately excludes gameplay simulation, multiplayer, player state,
+procedural generation, and Axiom integration. Map/entity creation beyond the
+initial world can be done through ordinary source files; new files are discovered
+on returning to the editor. This is an initial Linux desktop implementation, not a
+cross-platform packaged release.
+
+Apache-2.0; see [LICENSE](LICENSE).

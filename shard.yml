@@ -7,8 +7,16 @@ authors:
 targets:
   world-myth:
     main: src/world_myth_cli.cr
+  world-myth-gtk:
+    main: src/world_myth_gtk.cr
 
 dependencies:
+  gtk4:
+    github: hugopl/gtk4.cr
+    version: 0.18.0
+  libadwaita:
+    github: hugopl/libadwaita.cr
+    branch: main
   sqlite3:
     github: crystal-lang/crystal-sqlite3
 

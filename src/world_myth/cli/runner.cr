@@ -13,6 +13,7 @@ module WorldMyth::CLI
 
   Paths default to the current directory. Exit codes: 0 success, 1 failure,
   2 usage error. fmt skips commented YAML unless explicitly authorized.
+  Launch the desktop editor with world-myth-gtk [path].
   TEXT
 
   def self.run(args = ARGV, output : IO = STDOUT, err : IO = STDERR) : Int32
