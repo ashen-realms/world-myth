@@ -1,0 +1,61 @@
+---
+schema_version: 1
+id: village
+name: Lanternfall Village
+width: 32
+height: 20
+default_terrain: grass
+legend:
+  g: grass
+  f: forest
+  w: wall
+  a: water
+  d: floor
+layers:
+  terrain:
+  - gggggggggggggggdddgggggggggggggg
+  - gggggggggggggggdddgggggggggggggg
+  - gggggggggggggggdddgggggggggggggg
+  - gggwwwwwwwwggggdddgggggggggggggg
+  - gggwddddddwggggdddgggggggggggggg
+  - gggwddddddwggggdddgggggggggggggg
+  - gggwddddddwggggdddgggggggggggggg
+  - gggwwwwdwwwggggdddgggggggggggggg
+  - gggggggggggggggdddgggggggggggggg
+  - dddddddddddddddddddddddddddddddd
+  - dddddddddddddddddddddddddddddddd
+  - dddddddddddddddddddddddddddddddd
+  - gggggggggggggggdddgggwwwdwwwwggg
+  - gggggggggggggggdddgggwddddddwggg
+  - gggggggggggggggdddgggwddddddwggg
+  - gggggggggggggggdddgggwddddddwggg
+  - gggggggggggggggdddgggwddddddwggg
+  - gggggggggggggggdddgggwwwwwwwwggg
+  - gggggggggggggggdddgggggggggggggg
+  - gggggggggggggggdddgggggggggggggg
+  collision:
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '.....#..........................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  objects:
+  - id: forge
+    entity: object.forge
+    x: 5
+    y: 4

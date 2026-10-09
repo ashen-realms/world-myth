@@ -1,0 +1,13 @@
+schema_version: 1
+id: item.lantern
+type: item
+name: Copper Lantern
+tags: [frontier]
+position:
+  map: heartlands/village
+  x: 23
+  y: 14
+properties:
+  glyph: "!"
+  foreground: "#eac981"
+  description: "A small part of Eldoria's story."

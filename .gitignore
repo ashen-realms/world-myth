@@ -1,5 +1,9 @@
-/docs/
 /lib/
 /bin/
 /.shards/
 *.dwarf
+**/dist/
+**/.dist-*/
+**/.dist-backup/
+**/.worldmyth/build.lock
+/.cache/

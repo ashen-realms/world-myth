@@ -1,0 +1,57 @@
+---
+schema_version: 1
+id: meadow
+name: Whispering Meadow
+width: 32
+height: 20
+default_terrain: grass
+legend:
+  g: grass
+  f: forest
+  w: wall
+  a: water
+  d: floor
+layers:
+  terrain:
+  - ffffffffffffffffffffffffffffffff
+  - fgggggggggggggggggdgggggaaaaaaaf
+  - fgggggggggggggggggdggggaaaaaaaaf
+  - fgggggggggggggggggdggggaaaaaaaaf
+  - fgggggffgffgffggggdgggaaaaaaaaaf
+  - fggggffgffgffgfgggdgggaaaaaaaaaf
+  - fggggfgffgffgffgggdgggaaaaaaaaaf
+  - fgggggffgffgffggggdgggaaaaaaaaaf
+  - fggggffgffgffgfgggdgggaaaaaaaaaf
+  - fggggfgffgffgffgggdgggaaaaaaaaaf
+  - fgggggffgffgffggggdgggaaaaaaaaaf
+  - fggggffgffgffgfgggdggggaaaaaaaaf
+  - fggggfgffgffgffgggdgggggaaaaaaaf
+  - fgggggggggggggggggdggggggggaaaaf
+  - fgggggggggggggggggdggggggggggggf
+  - fddddddddddddddddddddddddddddddf
+  - fgggggggggggggggggdggggggggggggf
+  - fgggggggggggggggggdggggggggggggf
+  - fgggggggggggggggggdggggggggggggf
+  - ffffffffffffffffffffffffffffffff
+  collision:
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  - '................................'
+  objects: []

@@ -6,7 +6,11 @@ authors:
 
 targets:
   world-myth:
-    main: src/world-myth.cr
+    main: src/world_myth_cli.cr
+
+dependencies:
+  sqlite3:
+    github: crystal-lang/crystal-sqlite3
 
 crystal: '>= 1.21.1'
 

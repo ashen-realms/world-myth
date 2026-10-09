@@ -1,0 +1,7 @@
+---
+schema_version: 1
+id: heartlands
+name: Heartlands
+maps:
+- meadow
+- village

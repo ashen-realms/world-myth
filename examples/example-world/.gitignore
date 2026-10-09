@@ -1,0 +1,5 @@
+dist/
+.dist-*/
+.worldmyth/*.local.yaml
+.worldmyth/build.lock
+.dist-backup/
