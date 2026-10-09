@@ -4,9 +4,10 @@ module WorldMyth::Core
     getter map : Map
     getter reference : String
     getter catalog : Catalog
+    getter analysis : Analysis
     getter entities = {} of Tuple(Int32, Int32) => Entity
 
-    def initialize(analysis : Analysis, reference : String)
+    def initialize(@analysis : Analysis, reference : String)
       unless analysis.valid?
         raise DocumentError.new("Preview requires a valid world:\n" + analysis.diagnostics.select(&.severity.error?).join('\n'))
       end

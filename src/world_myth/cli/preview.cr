@@ -17,7 +17,15 @@ module WorldMyth::CLI
     getter x = 0
     getter y = 0
 
+    getter camera = Core::SceneCamera.new
+    @renderer : Core::SceneRenderer
+    @paused = false
+    @time_ms = 0_i64
+    @previous : Array(Tuple(String, String, String))? = nil
+    @previous_size = {0, 0}
+
     def initialize(@preview : Core::Preview)
+      @renderer = Core::SceneRenderer.new(@preview.map, @preview.analysis, @preview.reference)
     end
 
     def move(dx : Int32, dy : Int32)
@@ -25,24 +33,23 @@ module WorldMyth::CLI
       @y = (y + dy).clamp(0, @preview.map.height - 1)
     end
 
-    # Two terminal columns per logical cell and explicit cursor placement keep
-    # wide glyphs from shifting subsequent cells. Never print source controls.
-    def frame(columns : Int32, rows : Int32) : String
-      width = Math.min(@preview.map.width - x, (columns - 1) // 2)
-      height = Math.min(@preview.map.height - y, rows - 3)
+    def frame(columns : Int32, rows : Int32, incremental = false) : String
+      camera.u = 4.0 * (x - y) - columns / 2.0
+      camera.v = x + y - 3.0
+      scene = @renderer.render(columns, Math.max(rows - 2, 0), camera, @time_ms)
+      previous = incremental && @previous_size == {columns, rows} ? @previous : nil
+      current = scene.cells.map { |c| {c.glyph, c.foreground, c.background} }
+      @previous, @previous_size = current, {columns, rows}
       String.build do |io|
-        io << "\e[0m\e[2J\e[H"
-        title = "World Myth | #{@preview.reference} | X:#{x} Y:#{y} | #{@preview.map.width}×#{@preview.map.height}"
+        io << (previous ? "\e[0m\e[H\e[2K" : "\e[0m\e[2J\e[H")
+        title = "World Myth | #{@preview.reference} | X:#{x} Y:#{y} | #{camera.active_surface}"
         io << title[0, Math.max(columns - 1, 0)]
-        Math.max(height, 0).times do |dy|
-          Math.max(width, 0).times do |dx|
-            glyph, foreground, background = @preview.cell(x + dx, y + dy)
-            cursor = "\e[#{dy + 2};#{dx * 2 + 1}H"
-            io << cursor << color(background, 48) << "  " << cursor << color(foreground, 38) << glyph
-          end
+        scene.cells.each_with_index do |cell, index|
+          next if previous && previous[index]? == current[index]
+          io << "\e[#{index // columns + 2};#{index % columns + 1}H" << color(cell.background, 48) << color(cell.foreground, 38) << cell.glyph
         end
         if rows >= 2
-          io << "\e[0m\e[#{rows};1H" << "Arrows/WASD: pan | Q/Esc: close"[0, Math.max(columns - 1, 0)]
+          io << "\e[0m\e[#{rows};1H" << "WASD:pan Tab:floor C:cut R:roof Space:pause A:clip Q:exit"[0, Math.max(columns - 1, 0)]
         end
       end
     end
@@ -66,14 +73,19 @@ module WorldMyth::CLI
       input.raw do
         begin
           output << "\e[?1049h\e[?25l"
-          input.read_timeout = 150.milliseconds
+          input.read_timeout = 33.milliseconds
+          previous_time = Time.instant
           last_size = {0, 0}
           redraw = true
           escape = 0
           loop do
+            now = Time.instant
+            @time_ms += (now - previous_time).total_milliseconds.to_i64 unless @paused
+            previous_time = now
+            redraw ||= @renderer.animated && !@paused
             dimensions = size(output)
             if redraw || dimensions != last_size
-              output << frame(*dimensions)
+              output << frame(*dimensions, true)
               output.flush
               last_size = dimensions
               redraw = false
@@ -95,11 +107,20 @@ module WorldMyth::CLI
               else
                 case byte
                 when 113, 81, 3, 4 then break
-                when 27            then escape = 1
-                when 119, 87       then move(0, -1)
-                when 115, 83       then move(0, 1)
-                when 97, 65        then move(-1, 0)
-                when 100, 68       then move(1, 0)
+                when 9
+                  surfaces = @preview.map.all_surfaces.map(&.id)
+                  camera.active_surface = surfaces[((surfaces.index(camera.active_surface) || 0) + 1) % surfaces.size]
+                when 32  then @paused = !@paused
+                when 99  then camera.cutaway = !camera.cutaway
+                when 114 then camera.roofs = !camera.roofs
+                when 65
+                  clips = @preview.analysis.sprites.values.flat_map { |s| s.animations.keys }.uniq.sort
+                  camera.animation = clips[((clips.index(camera.animation) || -1) + 1) % clips.size] unless clips.empty?
+                when 27      then escape = 1
+                when 119, 87 then move(0, -1)
+                when 115, 83 then move(0, 1)
+                when 97      then move(-1, 0)
+                when 100, 68 then move(1, 0)
                 end
               end
               redraw = true

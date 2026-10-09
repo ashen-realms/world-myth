@@ -62,8 +62,8 @@ class GUICheck
     canvas.value = value
     canvas.tool = erase ? "Eraser" : "Brush"
     v = canvas.viewport
-    canvas.begin_gesture(v.offset_x + 2.5 * v.cell_width * v.zoom, v.offset_y + 2.5 * v.cell_height * v.zoom)
-    canvas.finish_gesture(v.offset_x + 6.5 * v.cell_width * v.zoom, v.offset_y + 2.5 * v.cell_height * v.zoom)
+    canvas.begin_gesture(*canvas.project_cell(2, 2))
+    canvas.finish_gesture(*canvas.project_cell(6, 2))
   end
 
   def step : Bool

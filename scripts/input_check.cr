@@ -34,6 +34,7 @@ class InputCheck
   @position = {0, 0}
   @failed = false
   @old_pan = 0.0
+  @drag_delta = {0, 0}
   @old_zoom = 1.0
   @wait_ticks = 0
 
@@ -103,12 +104,15 @@ class InputCheck
       translated = LibGraphene::Point.new
       LibGtk.gtk_widget_compute_point(canvas.widget, w.window, pointerof(point), pointerof(translated))
       v = canvas.viewport
-      @position = {dx + translated.x.to_i + (v.offset_x + v.cell_width * 2.5 * v.zoom).to_i, dy + translated.y.to_i + (v.offset_y + v.cell_height * 2.5 * v.zoom).to_i}
+      px, py = canvas.project_cell(2, 2)
+      ex, ey = canvas.project_cell(6, 2)
+      @drag_delta = {(ex - px).to_i, (ey - py).to_i}
+      @position = {dx + translated.x.to_i + px.to_i, dy + translated.y.to_i + py.to_i}
       canvas.value = "forest"
       motion(*@position)
       button(1_u32, true)
     when 1
-      motion(@position[0] + 100, @position[1])
+      motion(@position[0] + @drag_delta[0], @position[1] + @drag_delta[1])
     when 2
       button(1_u32, false)
     when 3
@@ -122,7 +126,7 @@ class InputCheck
       @old_pan = canvas.viewport.offset_x
       button(2_u32, true)
     when 6
-      motion(@position[0] + 145, @position[1] + 35)
+      motion(@position[0] + @drag_delta[0] + 45, @position[1] + @drag_delta[1] + 35)
     when 7
       button(2_u32, false)
     when 8

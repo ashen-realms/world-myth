@@ -7,6 +7,12 @@ def with_v2(&)
   end
 end
 
+def scene_for(project : Project, map : Map? = nil)
+  analysis = project.analyze
+  raise analysis.diagnostics.join('\n') unless analysis.valid?
+  SceneRenderer.new(map || analysis.maps["heartlands/meadow"], analysis, "heartlands/meadow")
+end
+
 describe "spatial world v2" do
   it "migrates to a separate valid project and preserves the original byte for byte" do
     with_world do |old|
@@ -73,6 +79,34 @@ describe "spatial world v2" do
     a.loop = false
     sprite.frame("idle", "S", 1000_i64).rows.should eq([" "])
   end
+
+  it "projects and picks elevated cells and clips without losing sprite overhangs" do
+    with_v2 do |p|
+      doc = map_document(p)
+      doc.edit("Raise") { |v| v.as(Map).surface.set("height", 2, 2, "4") }
+      renderer = scene_for(p)
+      camera = SceneCamera.new
+      camera.u, camera.v = -10.0, -2.0
+      frame = renderer.render(40, 20, camera)
+      point = Isometric.project(2.5, 2.5, 4.0)
+      hit = frame.hit((point.u - camera.u).to_i, (point.v - camera.v).to_i)
+      hit.not_nil!.x.should eq(2)
+      hit.not_nil!.y.should eq(2)
+      Isometric.cell(point.u, point.v, 4.0).should eq({2, 2})
+      frame.cells.size.should eq(800)
+    end
+  end
+
+  it "composes transparency and depth independently of primitive submission order" do
+    frame = GlyphFrame.new(1, 1)
+    hit = Hit.new("ground", 0, 0, 0.0)
+    frame.put(0, 0, 8.0, 1, "@", "#ffffff", nil, hit, false)
+    frame.put(0, 0, 1.0, 0, ".", "#88aa66", "#101816", hit, true)
+    frame.cells[0].glyph.should eq("@")
+    frame.cells[0].background.should eq("#101816")
+    frame.put(0, 0, 9.0, 2, " ", "#ffffff", "#555555", hit, false)
+    frame.cells[0].glyph.should eq(" ")
+  end
 end
 
 describe "spatial compatibility and visibility" do
@@ -90,6 +124,28 @@ describe "spatial compatibility and visibility" do
       node["surfaces"]?.should be_nil
       node["walls"]?.should be_nil
       node["layers"]["elevation"]?.should be_nil
+    end
+  end
+
+  it "renders sprite overhang when its anchor is outside the viewport and keeps results independent of prior views" do
+    with_v2 do |p|
+      sprite = Sprite.new("actor.test", "Test", 3, 3)
+      sprite.animations["idle"].directions["S"][0].rows = ["xxx", " x ", "x x"]
+      p.add_document("sprites/test.yaml", sprite.to_yaml)
+      entity = Entity.from_yaml(entity_yaml.sub("schema_version: 1", "schema_version: 2"))
+      entity.sprite = sprite.id
+      entity.position = Position.new("heartlands/meadow", 2, 2)
+      p.add_document("entities/npcs/test.yaml", entity.to_yaml)
+      renderer = scene_for(p)
+      camera = SceneCamera.new
+      camera.u, camera.v = -5.0, 0.0
+      before = renderer.render(10, 4, camera)
+      before.cells.any? { |c| c.hit.try(&.entity) == entity.id }.should be_true
+      camera.u, camera.v = -100.0, 10.0
+      renderer.render(100, 40, camera)
+      camera.u, camera.v = -5.0, 0.0
+      after = renderer.render(10, 4, camera)
+      after.cells.map { |c| {c.glyph, c.foreground, c.background} }.should eq(before.cells.map { |c| {c.glyph, c.foreground, c.background} })
     end
   end
 

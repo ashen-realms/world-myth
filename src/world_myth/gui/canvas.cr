@@ -18,6 +18,7 @@ module WorldMyth::GUI
     property show_objects = true
     property on_change : Proc(Nil) = -> { }
     property on_selection : Proc(Nil) = -> { }
+    property on_entity_select : Proc(String, Nil) = ->(id : String) { }
     property on_select : Proc(Int32, Int32, Nil) = ->(x : Int32, y : Int32) { }
     property on_error : Proc(Exception, Nil) = ->(ex : Exception) { STDERR.puts ex.message }
     @document : Core::Document?
@@ -25,6 +26,14 @@ module WorldMyth::GUI
     @map_key = ""
     @stroke : Core::Stroke?
     @layouts = {} of String => Pango::Layout
+    getter camera = Core::SceneCamera.new
+    getter frame : Core::GlyphFrame?
+    property playing = true
+    @renderer : Core::SceneRenderer?
+    @time_ms = 0_i64
+    @frame_u = 0.0
+    @frame_v = 0.0
+    @last_tick = Time.instant
     @space = false
     @panning = false
     @origin = {0.0, 0.0}
@@ -52,7 +61,7 @@ module WorldMyth::GUI
       motion = Gtk::EventControllerMotion.new
       motion.motion_signal.connect do |x, y|
         @mouse = {x, y}
-        cx, cy = viewport.cell(x, y)
+        cx, cy = screen_cell(x, y)
         on_select.call(cx, cy)
       end
       widget.add_controller(motion)
@@ -76,6 +85,13 @@ module WorldMyth::GUI
       end
       keys.key_released_signal.connect { |key, _, _| @space = false if key == 32_u32 }
       widget.add_controller(keys)
+      GLib.timeout_milliseconds(33_u32) do
+        now = Time.instant
+        @time_ms += (now - @last_tick).total_milliseconds.to_i64 if playing
+        @last_tick = now
+        widget.queue_draw if playing && widget.mapped && @renderer.try(&.animated)
+        true
+      end
     end
 
     def load(document : Core::Document?, analysis : Core::Analysis?, reset = false)
@@ -84,10 +100,13 @@ module WorldMyth::GUI
       @analysis = analysis
       @map_key = analysis.try(&.paths.find { |key, path| key.starts_with?("map:") && path == document.try(&.path) }).try(&.[0].sub("map:", "")) || ""
       if reset
-        viewport.offset_x = 24.0
-        viewport.offset_y = 24.0
+        viewport.offset_x = (widget.width > 0 ? widget.width / 2.0 : 300.0)
+        viewport.offset_y = 60.0
         @selected = {0, 0}
       end
+      @renderer = nil
+      @frame = nil
+      camera.active_surface = "ground" unless map.try(&.all_surfaces.any? { |s| s.id == camera.active_surface })
       @layouts.clear
       widget.queue_draw
     end
@@ -108,7 +127,15 @@ module WorldMyth::GUI
       @panning = button == 2 || @space
       @pan_origin = {viewport.offset_x, viewport.offset_y}
       return if @panning
-      cx, cy = viewport.cell(x, y)
+      if tool == "Select"
+        if hit = scene_hit(x, y)
+          if entity = hit.entity
+            on_entity_select.call(entity)
+            return
+          end
+        end
+      end
+      cx, cy = screen_cell(x, y)
       return unless map.try(&.inside?(cx, cy))
       @selected = {cx, cy}
       on_select.call(cx, cy)
@@ -116,8 +143,9 @@ module WorldMyth::GUI
       unless tool == "Select"
         raise Core::DocumentError.new("No palette entries for this layer. Define a world object in entities/objects first.") if layer == "objects" && value.empty? && tool != "Eraser"
         if document = @document
-          @stroke = Core::Stroke.new(document, layer, value, tool == "Eraser" || button == 3)
+          @stroke = Core::Stroke.new(document, layer, value, tool == "Eraser" || button == 3, camera.active_surface)
           @stroke.not_nil!.visit(cx, cy)
+          @renderer = nil
         end
       end
       widget.queue_draw
@@ -131,8 +159,9 @@ module WorldMyth::GUI
         viewport.offset_x = @pan_origin[0] + x - @origin[0]
         viewport.offset_y = @pan_origin[1] + y - @origin[1]
       elsif stroke = @stroke
-        cx, cy = viewport.cell(x, y)
+        cx, cy = screen_cell(x, y)
         stroke.visit(cx, cy)
+        @renderer = nil
         @selected = {cx, cy} if stroke.map.inside?(cx, cy)
       end
       widget.queue_draw
@@ -164,7 +193,7 @@ module WorldMyth::GUI
       key = "#{text}:#{font}:#{viewport.zoom}"
       layout = @layouts[key] ||= begin
         item = PangoCairo.create_layout(cr)
-        item.font_description = Pango::FontDescription.from_string("#{font} #{(14 * viewport.zoom).round(2)}")
+        item.font_description = Pango::FontDescription.from_string("#{font} #{(cw * 1.2).round(2)}")
         item.set_text(text, -1)
         item
       end
@@ -180,75 +209,69 @@ module WorldMyth::GUI
       WorldMythCairo.restore(cr)
     end
 
+    def char_width : Float64
+      viewport.cell_width * viewport.zoom / 2
+    end
+
+    def char_height : Float64
+      char_width * 2
+    end
+
+    def screen_cell(x : Float64, y : Float64) : Tuple(Int32, Int32)
+      if frame = @frame
+        if hit = frame.hit(((x - viewport.offset_x) / char_width - @frame_u).floor.to_i, ((y - viewport.offset_y) / char_height - @frame_v).floor.to_i)
+          return {hit.x, hit.y} if hit.surface == camera.active_surface
+        end
+      end
+      # Blank cells on a newly created elevated surface must still be paintable.
+      level = map.try(&.surface(camera.active_surface).elevation.first?.try(&.split.first.to_f)) || 0.0
+      Core::Isometric.cell((x - viewport.offset_x) / char_width, (y - viewport.offset_y) / char_height, level)
+    end
+
+    def scene_hit(x : Float64, y : Float64) : Core::Hit?
+      return nil unless frame = @frame
+      column = ((x - viewport.offset_x) / char_width - @frame_u).floor.to_i
+      row = ((y - viewport.offset_y) / char_height - @frame_v).floor.to_i
+      return nil unless column >= 0 && row >= 0 && column < frame.width && row < frame.height
+      frame.cells[row * frame.width + column].hit
+    end
+
+    def project_cell(x : Int32, y : Int32) : Tuple(Float64, Float64)
+      z = map.try(&.surface(camera.active_surface).z(x, y)) || 0.0
+      p = Core::Isometric.project(x + 0.5, y + 0.5, z)
+      {viewport.offset_x + p.u * char_width, viewport.offset_y + p.v * char_height}
+    end
+
     private def draw(area : Gtk::DrawingArea, cr : Cairo::Context, width : Int32, height : Int32) : Nil
       start = Time.instant
       rgb(cr, "#0c1212")
       WorldMythCairo.paint(cr)
       @visible_cells = 0
       return unless current = map
-      analysis = @analysis
-      return unless catalog = analysis.try(&.catalog)
-      cw, ch = viewport.cell_width * viewport.zoom, viewport.cell_height * viewport.zoom
-      ox, oy = viewport.offset_x, viewport.offset_y
-      x0 = ((-ox / cw).floor.to_i).clamp(0, current.width)
-      y0 = ((-oy / ch).floor.to_i).clamp(0, current.height)
-      x1 = (((width - ox) / cw).ceil.to_i).clamp(0, current.width)
-      y1 = (((height - oy) / ch).ceil.to_i).clamp(0, current.height)
-      (y0...y1).each do |y|
-        (x0...x1).each do |x|
-          @visible_cells += 1
-          px, py = ox + x * cw, oy + y * ch
-          if tile = catalog.terrain[current.terrain_at(x, y)]?
-            if show_terrain
-              rgb(cr, tile.background)
-              WorldMythCairo.rectangle(cr, px, py, cw, ch)
-              WorldMythCairo.fill(cr)
-              glyph(cr, tile.glyph, tile.foreground, px, py, cw, ch)
-            end
-          end
-          if show_collision
-            collision = current.symbol_at("collision", x, y)
-            if collision != "."
-              rgb(cr, collision == "#" ? "#d64f56" : "#53bda6", 0.27)
-              WorldMythCairo.rectangle(cr, px, py, cw, ch)
-              WorldMythCairo.fill(cr)
-            end
+      return unless analysis = @analysis
+      return unless analysis.valid?
+      @renderer ||= Core::SceneRenderer.new(current, analysis, @map_key)
+      camera.u = -viewport.offset_x / char_width
+      camera.v = -viewport.offset_y / char_height
+      camera.terrain, camera.objects, camera.collision, camera.grid = show_terrain, show_objects, show_collision, show_grid
+      cols, rows = (width / char_width).ceil.to_i, (height / char_height).ceil.to_i
+      frame = @renderer.not_nil!.render(cols, rows, camera, @time_ms)
+      @frame = frame
+      @frame_u, @frame_v = camera.u, camera.v
+      @visible_cells = @renderer.not_nil!.last_candidates
+      frame.cells.each_with_index do |cell, index|
+        x, y = (index % cols) * char_width, (index // cols) * char_height
+        rgb(cr, cell.background)
+        WorldMythCairo.rectangle(cr, x, y, char_width + 0.5, char_height + 0.5)
+        WorldMythCairo.fill(cr)
+        glyph(cr, cell.glyph, cell.foreground, x, y, char_width, char_height) unless cell.glyph == " "
+        if hit = frame.surface_hits[index]
+          if {hit.x, hit.y} == selected
+            rgb(cr, "#f2cb7a", 0.25)
+            WorldMythCairo.rectangle(cr, x, y, char_width, char_height)
+            WorldMythCairo.fill(cr)
           end
         end
-      end
-      if show_objects && analysis
-        current.layers.objects.each do |placement|
-          next unless placement.x >= x0 && placement.x < x1 && placement.y >= y0 && placement.y < y1
-          if entity = analysis.entities[placement.entity]?
-            glyph(cr, entity.glyph, entity.foreground, ox + placement.x * cw, oy + placement.y * ch, cw, ch)
-          end
-        end
-        analysis.entities.each_value do |entity|
-          if position = entity.position
-            next unless analysis.resolve_map(position.map) == @map_key
-            next unless position.x >= x0 && position.x < x1 && position.y >= y0 && position.y < y1
-            glyph(cr, entity.glyph, entity.foreground, ox + position.x * cw, oy + position.y * ch, cw, ch)
-          end
-        end
-      end
-      if show_grid && viewport.zoom >= 0.5
-        rgb(cr, "#657570", 0.16)
-        WorldMythCairo.set_line_width(cr, 1.0)
-        (x0..x1).each do |x|
-          WorldMythCairo.move_to(cr, ox + x * cw, oy + y0 * ch)
-          WorldMythCairo.line_to(cr, ox + x * cw, oy + y1 * ch)
-        end
-        (y0..y1).each do |y|
-          WorldMythCairo.move_to(cr, ox + x0 * cw, oy + y * ch)
-          WorldMythCairo.line_to(cr, ox + x1 * cw, oy + y * ch)
-        end
-        WorldMythCairo.stroke(cr)
-      end
-      if current.inside?(*selected)
-        rgb(cr, "#f2cb7a")
-        WorldMythCairo.set_line_width(cr, 2.0)
-        WorldMythCairo.rectangle(cr, ox + selected[0] * cw + 1, oy + selected[1] * ch + 1, cw - 2, ch - 2)
-        WorldMythCairo.stroke(cr)
       end
       @last_frame_ms = (Time.instant - start).total_milliseconds
     rescue ex
