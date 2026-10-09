@@ -1,6 +1,7 @@
 require "./canvas"
 require "./preferences"
 require "./preview_launcher"
+require "./sprite_editor"
 
 module WorldMyth::GUI
   class Window
@@ -25,7 +26,7 @@ module WorldMyth::GUI
     @title = Gtk::Label.new("World Myth")
     @document_title = Gtk::Label.new("Choose a document")
     @palette : Gtk::DropDown = Gtk::DropDown.new_from_strings(["grass"])
-    @layer : Gtk::DropDown = Gtk::DropDown.new_from_strings(["Terrain", "Objects", "Collision"])
+    @layer : Gtk::DropDown = Gtk::DropDown.new_from_strings(["Terrain", "Objects", "Collision", "Height", "Slope / stairs", "Walls"])
     @tool : Gtk::DropDown = Gtk::DropDown.new_from_strings(["Brush", "Eraser", "Select"])
     @palette_values = ["grass"]
     @left_pane = Gtk::Paned.new(:horizontal)
@@ -222,11 +223,15 @@ module WorldMyth::GUI
         visibility.append(check)
       end
       map_box.append(visibility)
+      map_box.append(spatial_toolbar)
       map_box.append(canvas.widget)
       hint = label("  Paint: drag  ·  Pan: middle-drag / Space-drag  ·  Zoom: Ctrl-scroll", "dim-label")
       hint.margin_bottom = 6
       map_box.append(hint)
       @editor_stack.add_named(map_box, "map")
+      @editor_stack.add_named(@sprite_editor.widget, "sprite")
+      @sprite_editor.on_change = -> { refresh_document; nil }
+      @sprite_editor.on_error = ->(ex : Exception) { error_dialog(ex.message || "Sprite edit failed"); nil }
       source_view.monospace = true
       source_view.show_line_numbers = true
       source_view.auto_indent = true
@@ -261,8 +266,10 @@ module WorldMyth::GUI
       @palette.notify_signal["selected"].connect { canvas.value = @palette_values[@palette.selected.to_i64]? || "" }
       canvas.on_change = -> { refresh_document; nil }
       canvas.on_selection = -> { rebuild_inspector; nil }
+      canvas.on_entity_select = ->(id : String) { analysis.try(&.paths["entity:#{id}"]?).try { |path| open_document(path) }; nil }
       canvas.on_select = ->(x : Int32, y : Int32) {
-        @coordinates.text = "X: #{x}  Y: #{y}"
+        z = canvas.map.try { |m| m.inside?(x, y) ? m.surface(canvas.camera.active_surface).z(x, y).to_s : "—" } || "—"
+        @coordinates.text = "#{canvas.camera.active_surface} · X: #{x} Y: #{y} Z: #{z}"
         nil
       }
       canvas.on_error = ->(ex : Exception) {
@@ -339,6 +346,8 @@ module WorldMyth::GUI
       refresh_document(true)
       if doc.model.is_a?(Core::Map) && analysis.try(&.editable_map?(path))
         @editor_stack.visible_child_name = "map"
+      elsif doc.model.is_a?(Core::Sprite) && !analysis.not_nil!.diagnostics.any? { |d| d.path == path && d.severity.error? }
+        @editor_stack.visible_child_name = "sprite"
       else
         show_source
       end
@@ -347,7 +356,9 @@ module WorldMyth::GUI
     private def rebuild_explorer
       clear(@explorer)
       return unless p = project
-      {"World" => ["world.yaml", "terrain.yaml"], "Regions & maps" => p.documents.keys.select(&.starts_with?("regions/")), "Entities" => p.documents.keys.select(&.starts_with?("entities/")), "Lore" => p.documents.keys.select(&.starts_with?("lore/"))}.each do |heading, paths|
+      @explorer.append(button("Create v2 copy…") { migrate_dialog }) if analysis.try(&.world.try(&.schema_version)) == 1
+      @explorer.append(button("New sprite…") { new_sprite_dialog }) if analysis.try(&.world.try(&.schema_version)) == 2
+      {"World" => ["world.yaml", "terrain.yaml"], "Regions & maps" => p.documents.keys.select(&.starts_with?("regions/")), "Entities" => p.documents.keys.select(&.starts_with?("entities/")), "Sprites" => p.documents.keys.select(&.starts_with?("sprites/")), "Lore" => p.documents.keys.select(&.starts_with?("lore/"))}.each do |heading, paths|
         section = label(heading, "heading")
         section.margin_top = 10
         @explorer.append(section)
@@ -360,8 +371,8 @@ module WorldMyth::GUI
           next unless doc = p.documents[path]?
           value = doc.model
           name = case value
-                 when Core::Map, Core::Region, Core::Entity, Core::World then value.name
-                 else                                                         File.basename(path)
+                 when Core::Map, Core::Region, Core::Entity, Core::World, Core::Sprite then value.name
+                 else                                                                       File.basename(path)
                  end
           prefix = value.is_a?(Core::Map) ? "    ▦ " : value.is_a?(Core::Entity) ? "◇ " : ""
           item = button("#{prefix}#{name}#{doc.dirty? ? " •" : ""}") { open_document(path) }
@@ -382,6 +393,13 @@ module WorldMyth::GUI
         sync_source
         @document_title.text = doc.path + (doc.dirty? ? " •" : "")
         canvas.load(analysis.not_nil!.editable_map?(doc.path) ? doc : nil, analysis, reset)
+        update_surfaces
+        if doc.model.is_a?(Core::Sprite) && !analysis.not_nil!.diagnostics.any? { |d| d.path == doc.path && d.severity.error? }
+          @sprite_editor.load(doc)
+        else
+          @sprite_editor.load(nil)
+          @editor_stack.visible_child_name = "source" if @editor_stack.visible_child_name == "sprite"
+        end
         update_palette
         rebuild_inspector
       end
@@ -413,6 +431,10 @@ module WorldMyth::GUI
     private def show_map
       flush_source
       if doc = current
+        if doc.model.is_a?(Core::Sprite) && !analysis.not_nil!.diagnostics.any? { |d| d.path == doc.path && d.severity.error? }
+          @editor_stack.visible_child_name = "sprite"
+          return
+        end
         if analysis.try(&.editable_map?(doc.path))
           @editor_stack.visible_child_name = "map"
           canvas.widget.grab_focus
@@ -424,8 +446,8 @@ module WorldMyth::GUI
     end
 
     private def update_palette
-      index = @layer.selected.clamp(0_u32, 2_u32).to_i
-      canvas.layer = {"terrain", "objects", "collision"}[index]
+      index = @layer.selected.clamp(0_u32, 5_u32).to_i
+      canvas.layer = {"terrain", "objects", "collision", "height", "shape", "wall"}[index]
       labels = [] of String
       @palette_values = [] of String
       case canvas.layer
@@ -445,6 +467,21 @@ module WorldMyth::GUI
       when "collision"
         @palette_values = ["#", "+", "."]
         labels = ["Blocked", "Passable", "Inherit terrain"]
+      when "height"
+        @palette_values = (-64..64).map(&.to_s)
+        labels = @palette_values.map { |v| "Height #{v}" }
+      when "shape"
+        @palette_values = %w(. n e s w N E S W)
+        labels = ["Flat", "Slope N", "Slope E", "Slope S", "Slope W", "Stairs N", "Stairs E", "Stairs S", "Stairs W"]
+      when "wall"
+        analysis.try(&.catalog.try(&.terrain.keys.sort.each do |id|
+          %w(N E S W).each do |edge|
+            (1..32).each do |height|
+              @palette_values << "#{id}:#{edge}:#{height}"
+              labels << "#{id} · #{edge} · height #{height}"
+            end
+          end
+        end))
       end
       previous = canvas.value
       @palette.model = Gtk::StringList.new(labels.empty? ? ["No entries"] : labels)
@@ -463,13 +500,22 @@ module WorldMyth::GUI
         x, y = canvas.selected
         @inspector.append(label("Selected cell: #{x}, #{y}"))
         if model.inside?(x, y) && analysis.try(&.editable_map?(doc.path))
-          @inspector.append(label("Terrain: #{model.terrain_at(x, y)}\nCollision: #{model.symbol_at("collision", x, y)}"))
-          model.layers.objects.select { |o| o.x == x && o.y == y }.each do |o|
+          surface = model.surface(canvas.camera.active_surface)
+          @inspector.append(label("Surface: #{surface.id}\nHeight: #{surface.z(x, y)}\nTerrain: #{model.legend[surface.symbol(x, y)]? || "empty"}\nCollision: #{surface.collision[y].byte_at(x).chr}"))
+          model.layers.objects.select { |o| o.x == x && o.y == y && o.surface == surface.id }.each do |o|
             @inspector.append(label("Object: #{o.entity}"))
+            direction = Gtk::DropDown.new_from_strings(Core::DIRECTIONS)
+            direction.selected = (Core::DIRECTIONS.index(o.facing) || 4).to_u32
+            @inspector.append(direction)
+            @inspector.append(button("Apply facing #{o.id}") do
+              raise Core::DocumentError.new("Create a v2 copy to change facing") if model.schema_version == 1
+              doc.edit("Object facing") { |value| value.as(Core::Map).layers.objects.find { |p| p.id == o.id }.not_nil!.facing = Core::DIRECTIONS[direction.selected.to_i] }
+              refresh_document
+            end)
           end
           @inspector.append(button("Apply palette to selection") do
             begin
-              stroke = Core::Stroke.new(doc, canvas.layer, canvas.value, canvas.tool == "Eraser")
+              stroke = Core::Stroke.new(doc, canvas.layer, canvas.value, canvas.tool == "Eraser", canvas.camera.active_surface)
               stroke.visit(x, y)
               stroke.commit
               refresh_document
@@ -481,6 +527,10 @@ module WorldMyth::GUI
         @inspector.append(label("Choose a layer and palette entry. Collision overlays: red blocks, green permits movement.", "dim-label"))
       when Core::Entity
         entity_inspector(doc, model)
+      when Core::Catalog
+        material_inspector(doc, model)
+      when Core::Sprite
+        @inspector.append(label("#{model.name}\n#{model.width} × #{model.height}\nUse Map to open the sprite grid. Transparent cells are spaces in source rows."))
       else
         @inspector.append(label(doc.path, "title-3"))
         @inspector.append(label(doc.error || "Edit this document in the source view.", "dim-label"))
@@ -505,6 +555,10 @@ module WorldMyth::GUI
       map = entry(@inspector, "Map (blank removes position)", entity.position.try(&.map) || "")
       x = entry(@inspector, "X", (entity.position.try(&.x) || 0).to_s)
       y = entry(@inspector, "Y", (entity.position.try(&.y) || 0).to_s)
+      surface = entry(@inspector, "Surface", entity.position.try(&.surface) || "ground")
+      facing = entry(@inspector, "Facing (N NE E SE S SW W NW)", entity.position.try(&.facing) || "S")
+      sprite = entry(@inspector, "Sprite ID (blank uses legacy glyph)", entity.sprite || "")
+      animation = entry(@inspector, "Animation", entity.animation)
       @inspector.append(label("Properties (YAML scalar values)", "dim-label"))
       props = Gtk::TextView.new
       props.monospace = true
@@ -519,6 +573,9 @@ module WorldMyth::GUI
             updated.name = name.text
             updated.tags = tags.text.split(',').map(&.strip).reject(&.empty?)
             updated.position = map.text.strip.empty? ? nil : Core::Position.new(map.text.strip, x.text.to_i, y.text.to_i)
+            updated.position.try { |p| p.surface = surface.text.strip; p.facing = facing.text.strip.upcase }
+            updated.sprite = sprite.text.strip.empty? ? nil : sprite.text.strip
+            updated.animation = animation.text.strip
             updated.properties = Hash(String, YAML::Any).from_yaml(props.buffer.text)
             sources = project.not_nil!.snapshot
             sources[doc.path] = updated.to_yaml
@@ -816,11 +873,10 @@ module WorldMyth::GUI
     end
 
     private def preferences_dialog
-      dialog = Adw::AlertDialog.new("Map preferences", "Typography and cell dimensions are independent of logical coordinates.")
+      dialog = Adw::AlertDialog.new("Map preferences", "Glyph cells keep a 1:2 aspect ratio for the isometric projection.")
       fields = Gtk::Box.new(:vertical, 8)
       font = entry(fields, "Font family", canvas.font)
-      width = entry(fields, "Cell width (10–64 px)", canvas.viewport.cell_width.to_s)
-      height = entry(fields, "Cell height (12–80 px)", canvas.viewport.cell_height.to_s)
+      width = entry(fields, "Glyph width (5–32 px)", (canvas.viewport.cell_width / 2).to_s)
       dialog.extra_child = fields
       dialog.add_response("cancel", "Cancel")
       dialog.add_response("apply", "Apply")
@@ -828,12 +884,12 @@ module WorldMyth::GUI
       dialog.response_signal.connect do |response|
         if response == "apply"
           safely do
-            w, h = width.text.to_f64, height.text.to_f64
-            raise ArgumentError.new("Cell size is outside the allowed range") unless (10.0..64.0).includes?(w) && (12.0..80.0).includes?(h)
+            w = width.text.to_f64
+            raise ArgumentError.new("Cell size is outside the allowed range") unless (5.0..32.0).includes?(w)
             raise ArgumentError.new("Choose a font family") if font.text.strip.empty?
             canvas.font = font.text.strip
-            canvas.viewport.cell_width = w
-            canvas.viewport.cell_height = h
+            canvas.viewport.cell_width = w * 2
+            canvas.viewport.cell_height = w * 2
             refresh_document
             persist_preferences
           end
@@ -886,12 +942,16 @@ module WorldMyth::GUI
       end
     end
 
-    def capture(path : String)
+    def capture(path : String) : Bool
       snapshot = Gtk::Snapshot.new
       Gtk::WidgetPaintable.new(window).snapshot(snapshot, window.width.to_f64, window.height.to_f64)
       if node = snapshot.to_node
         window.renderer.not_nil!.render_texture(node, nil).save_to_png(path)
+      else
+        false
       end
     end
   end
 end
+
+require "./spatial_window"
